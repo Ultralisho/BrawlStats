@@ -9,8 +9,7 @@ async function start() {
     await sequelize.authenticate();
     console.log('✅ MySQL conectado');
 
-    // sync({ alter: true }) actualiza tablas sin borrar datos
-    await sequelize.sync({ alter: true });
+    await sequelize.sync();
     console.log('✅ Tablas sincronizadas');
 
     app.listen(PORT, () => {
