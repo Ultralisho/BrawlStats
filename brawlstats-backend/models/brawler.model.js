@@ -28,6 +28,16 @@ const Brawler = sequelize.define('Brawler', {
     type: DataTypes.STRING,
     allowNull: true,
   },
+  rawData: {
+    // Caché de la respuesta combinada de la API de Supercell + DB local.
+    // Estructura: { id, name, rarity, role, description, starPowers, gadgets, ... }
+    type: DataTypes.JSON,
+    allowNull: true,
+  },
+  rawDataUpdatedAt: {
+    type: DataTypes.DATE,
+    allowNull: true,
+  },
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true,

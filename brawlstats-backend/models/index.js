@@ -1,10 +1,12 @@
 const sequelize = require('../config/database');
 
-const User       = require('./user.model');
-const Player     = require('./player.model');
-const Brawler    = require('./brawler.model');
-const Stat       = require('./stat.model');
-const Report     = require('./report.model');
+const User            = require('./user.model');
+const Player          = require('./player.model');
+const Brawler         = require('./brawler.model');
+const Stat            = require('./stat.model');
+const Report          = require('./report.model');
+const Battle          = require('./battle.model');
+const PlayerSnapshot  = require('./playerSnapshot.model');
 
 // ── Asociaciones ────────────────────────────────────────────────────────────
 // Un usuario puede tener varios jugadores vinculados
@@ -23,4 +25,12 @@ Stat.belongsTo(Brawler,{ foreignKey: 'brawlerId', as: 'brawler'});
 User.hasMany(Report,  { foreignKey: 'userId', as: 'reports' });
 Report.belongsTo(User,{ foreignKey: 'userId', as: 'user'    });
 
-module.exports = { sequelize, User, Player, Brawler, Stat, Report };
+// Un jugador acumula muchas batallas (histórico para WR de últimas N)
+Player.hasMany(Battle,  { foreignKey: 'playerId', as: 'battles' });
+Battle.belongsTo(Player,{ foreignKey: 'playerId', as: 'player'  });
+
+// Un jugador acumula snapshots de su estado global (para gráficos)
+Player.hasMany(PlayerSnapshot,  { foreignKey: 'playerId', as: 'snapshots' });
+PlayerSnapshot.belongsTo(Player,{ foreignKey: 'playerId', as: 'player'    });
+
+module.exports = { sequelize, User, Player, Brawler, Stat, Report, Battle, PlayerSnapshot };
