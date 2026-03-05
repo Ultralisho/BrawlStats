@@ -1,6 +1,19 @@
-const { Brawler }     = require('../models');
+const axios           = require('axios');
+const { Op }          = require('sequelize');
+const { sequelize, Brawler, Battle } = require('../models');
 const supercell       = require('../services/supercell.service');
 const { ok, created, notFound } = require('../utils/apiResponse');
+
+const BRAWLAPI_BASE = 'https://api.brawlapi.com/v1';
+const brawlApi = axios.create({ baseURL: BRAWLAPI_BASE, timeout: 8000 });
+
+const MODE_LABEL_TO_KEY = {
+  'Gem Grab':'gemGrab', 'Brawl Ball':'brawlBall', 'Showdown':'showdown',
+  'Solo Showdown':'soloShowdown', 'Duo Showdown':'duoShowdown', 'Hot Zone':'hotZone',
+  'Knockout':'knockout', 'Bounty':'bounty', 'Heist':'heist', 'Duels':'duels',
+  'Wipeout':'wipeout', 'Siege':'siege', 'Basket Brawl':'basketBrawl',
+  'Hold The Trophy':'holdTheTrophy', 'Bot Drop':'botDrop',
+};
 
 async function getAll(req, res, next) {
   try {
@@ -137,4 +150,99 @@ async function update(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { getAll, getOne, getFull, getRanking, syncFromApi, update };
+async function getMaps(_req, res, next) {
+  try {
+    const { data } = await brawlApi.get('/maps');
+    const list = Array.isArray(data?.list) ? data.list : (Array.isArray(data) ? data : []);
+    return ok(res, list);
+  } catch (err) {
+    if (err.response?.status === 404) return ok(res, []);
+    return next(err);
+  }
+}
+
+async function getMapById(req, res, next) {
+  try {
+    const { data } = await brawlApi.get(`/maps/${encodeURIComponent(req.params.id)}`);
+    return ok(res, data);
+  } catch (err) {
+    if (err.response?.status === 404) return notFound(res, 'Mapa no encontrado');
+    return next(err);
+  }
+}
+
+// Winrate global agregado por brawler a partir de la tabla `Battle`
+// (todas las batallas sincronizadas por todos los usuarios).
+// Devuelve TODOS los brawlers del catalogo; los que no tienen partidas
+// suficientes (< MIN_SAMPLES por defecto 5) se devuelven con winRate=null
+// para evitar resultados poco fiables (ej. 100% winrate con 1 partida).
+async function getWinrates(req, res, next) {
+  try {
+    const modeLabel = req.query.mode;
+    const minSamples = Math.max(1, parseInt(req.query.minSamples, 10) || 5);
+
+    let modeKey = null;
+    if (modeLabel && modeLabel !== 'Global' && modeLabel !== 'all') {
+      modeKey = MODE_LABEL_TO_KEY[modeLabel] || modeLabel;
+    }
+
+    const where = { brawler: { [Op.ne]: null } };
+    if (modeKey) where.mode = modeKey;
+
+    const rows = await Battle.findAll({
+      attributes: [
+        'brawler',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'total'],
+        [sequelize.literal("SUM(CASE WHEN result = 'Win'  THEN 1 ELSE 0 END)"), 'wins'],
+        [sequelize.literal("SUM(CASE WHEN result = 'Loss' THEN 1 ELSE 0 END)"), 'losses'],
+      ],
+      where,
+      group: ['brawler'],
+      raw: true,
+    });
+
+    const byName = new Map();
+    for (const r of rows) {
+      const games  = Number(r.total)  || 0;
+      const wins   = Number(r.wins)   || 0;
+      const losses = Number(r.losses) || 0;
+      byName.set(r.brawler, {
+        games, wins, losses,
+        // Solo calcula winrate si hay muestra suficiente
+        winRate: games >= minSamples ? Math.round((wins / games) * 100) : null,
+      });
+    }
+
+    const brawlers = await Brawler.findAll({
+      where: { isActive: true },
+      attributes: ['id', 'name', 'rarity', 'role'],
+      order: [['name', 'ASC']],
+    });
+
+    const data = brawlers.map(b => {
+      const stats = byName.get(b.name) || { games: 0, wins: 0, losses: 0, winRate: null };
+      return {
+        id:      b.id,
+        name:    b.name,
+        rarity:  b.rarity,
+        role:    b.role,
+        games:   stats.games,
+        wins:    stats.wins,
+        losses:  stats.losses,
+        winRate: stats.winRate,
+      };
+    });
+
+    return ok(res, data, {
+      meta: {
+        mode:       modeLabel || 'Global',
+        total:      data.length,
+        minSamples,
+        withData:   data.filter(d => d.winRate != null).length,
+        totalGames: data.reduce((s, d) => s + d.games, 0),
+      },
+    });
+  } catch (err) { next(err); }
+}
+
+module.exports = { getAll, getOne, getFull, getRanking, syncFromApi, update, getMaps, getMapById, getWinrates };
