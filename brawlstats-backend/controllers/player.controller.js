@@ -1,6 +1,9 @@
+const bcrypt    = require('bcryptjs');
 const { Player, Stat, Battle, PlayerSnapshot, User } = require('../models');
 const supercell = require('../services/supercell.service');
 const { ok, created, notFound, badRequest } = require('../utils/apiResponse');
+
+const SYSTEM_USER_EMAIL = 'system@brawlstats.local';
 
 // Normaliza una batalla de Supercell para nuestro modelo Battle.
 // Devuelve null si no se puede determinar el resultado.
@@ -71,6 +74,29 @@ async function searchByTag(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// GET /api/v1/players/by-tag/:tag  -> perfil publico + battlelog normalizado
+async function getByTagPublic(req, res, next) {
+  try {
+    const tag = req.params.tag;
+    if (!tag) return badRequest(res, 'Tag requerido');
+
+    let player, raw;
+    try {
+      player = await supercell.getPlayer(tag);
+      raw    = await supercell.getBattleLog(tag).catch(() => []);
+    } catch (err) {
+      const handled = handleSupercellError(err, res);
+      if (handled) return handled;
+      return next(err);
+    }
+
+    const playerTag = player.tag;
+    const battles = raw.map(b => normalizeBattle(b, playerTag)).filter(Boolean);
+
+    return ok(res, { player, battles });
+  } catch (err) { next(err); }
+}
+
 async function linkPlayer(req, res, next) {
   try {
     const { tag } = req.body;
@@ -117,12 +143,49 @@ async function linkPlayer(req, res, next) {
 
 async function getMyPlayer(req, res, next) {
   try {
-    const player = await Player.findOne({
-      where: { userId: req.user.id },
-      include: [{ model: Stat, as: 'stats', limit: 50, order: [['recordedAt','DESC']] }],
-    });
+    const player = await Player.findOne({ where: { userId: req.user.id } });
     if (!player) return notFound(res, 'No tienes ningún jugador vinculado');
+
+    // Sincroniza si: datos viejos (>10 min), faltan brawlers, o victorias todas a 0
+    const raw          = player.rawData || {};
+    const ageMs        = player.lastSync ? Date.now() - new Date(player.lastSync).getTime() : Infinity;
+    const isStale      = ageMs > 10 * 60 * 1000;
+    const noBrawlers   = !raw.brawlers?.length;
+    const noVictories  = !raw['3vs3Victories'] && !raw.soloVictories && !raw.duoVictories
+                         && ageMs > 30 * 1000; // evita re-sync inmediato
+
+    if (isStale || noBrawlers || noVictories) {
+      try {
+        const apiData = await supercell.getPlayer(player.tag);
+        await player.update({
+          name:            apiData.name,
+          trophies:        apiData.trophies,
+          highestTrophies: apiData.highestTrophies,
+          level:           apiData.expLevel,
+          club:            apiData.club?.name || null,
+          rawData:         apiData,
+          lastSync:        new Date(),
+        });
+      } catch (syncErr) {
+        console.warn('[getMyPlayer] sync failed:', syncErr.message);
+      }
+    }
+
     return ok(res, player);
+  } catch (err) { next(err); }
+}
+
+// DELETE /api/v1/players/me — desvincula el jugador del usuario actual.
+// No borra los Battles ni los Stats acumulados: solo libera la asociacion
+// userId -> player. El registro Player queda en BBDD como "huerfano" hasta
+// que otro usuario lo re-vincule (linkPlayer ya maneja el caso de re-link).
+async function unlinkPlayer(req, res, next) {
+  try {
+    const player = await Player.findOne({ where: { userId: req.user.id } });
+    if (!player) return notFound(res, 'No tienes ningun jugador vinculado');
+    const tag = player.tag;
+    await player.destroy();
+    return ok(res, { unlinked: true, tag });
   } catch (err) { next(err); }
 }
 
@@ -188,4 +251,101 @@ async function getAllAdmin(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { searchByTag, linkPlayer, getMyPlayer, syncPlayer, getAllAdmin };
+// POST /api/v1/players/sync-top?limit=25 (admin)
+// Pobla la BBDD con los top N jugadores globales + sus battle logs.
+// Sirve para que el endpoint /brawlers/winrates devuelva datos verdaderamente
+// globales (no solo los del usuario actual).
+async function syncTopPlayers(req, res, next) {
+  try {
+    const limit = Math.max(1, Math.min(parseInt(req.query.limit, 10) || 25, 50));
+
+    // 1. Asegurar system user (dueno virtual de los Players sincronizados como datos meta)
+    let systemUser = await User.findOne({ where: { email: SYSTEM_USER_EMAIL } });
+    if (!systemUser) {
+      const lockedHash = await bcrypt.hash('locked_' + Math.random().toString(36), 10);
+      systemUser = await User.create({
+        name:     'BrawlStats Meta Sync',
+        email:    SYSTEM_USER_EMAIL,
+        password: lockedHash,
+        role:     'user',
+        isActive: false,
+      });
+    }
+
+    // 2. Top jugadores globales (Supercell devuelve hasta 200)
+    let topPlayers;
+    try {
+      topPlayers = await supercell.getRanking('global');
+    } catch (err) {
+      const handled = handleSupercellError(err, res);
+      if (handled) return handled;
+      return next(err);
+    }
+
+    const tags = topPlayers.slice(0, limit).map(p => p.tag).filter(Boolean);
+
+    let playersSynced = 0;
+    let battlesAdded  = 0;
+    const errors = [];
+
+    for (const tag of tags) {
+      try {
+        const apiData = await supercell.getPlayer(tag);
+
+        const [player] = await Player.findOrCreate({
+          where: { tag: apiData.tag },
+          defaults: {
+            userId:          systemUser.id,
+            tag:             apiData.tag,
+            name:            apiData.name,
+            trophies:        apiData.trophies,
+            highestTrophies: apiData.highestTrophies,
+            level:           apiData.expLevel,
+            club:            apiData.club?.name || null,
+            rawData:         apiData,
+            lastSync:        new Date(),
+          },
+        });
+        await player.update({
+          name:            apiData.name,
+          trophies:        apiData.trophies,
+          highestTrophies: apiData.highestTrophies,
+          level:           apiData.expLevel,
+          club:            apiData.club?.name || null,
+          rawData:         apiData,
+          lastSync:        new Date(),
+        });
+
+        try {
+          const battles = await supercell.getBattleLog(tag);
+          for (const b of battles) {
+            const norm = normalizeBattle(b, tag);
+            if (!norm) continue;
+            const [, isNew] = await Battle.findOrCreate({
+              where:    { playerId: player.id, battleTime: norm.battleTime },
+              defaults: { ...norm, playerId: player.id },
+            });
+            if (isNew) battlesAdded++;
+          }
+        } catch (err) {
+          console.warn(`[syncTopPlayers] battlelog ${tag} fallo:`, err.message);
+        }
+
+        playersSynced++;
+      } catch (err) {
+        const status = err.response?.status;
+        errors.push({ tag, status, msg: err.message });
+        console.warn(`[syncTopPlayers] ${tag} fallo: ${status || ''} ${err.message}`);
+      }
+    }
+
+    return ok(res, {
+      playersSynced,
+      battlesAdded,
+      attempted: tags.length,
+      errors:    errors.slice(0, 10),
+    });
+  } catch (err) { next(err); }
+}
+
+module.exports = { searchByTag, linkPlayer, getMyPlayer, unlinkPlayer, syncPlayer, getAllAdmin, syncTopPlayers, getByTagPublic };
