@@ -160,7 +160,8 @@ async function getBattleLog(req, res, next) {
       } else result = 'Draw';
       const trophyChange = b.battle?.trophyChange ?? 0;
       return {
-        mode:         MODE_LABELS[mode] || mode || '?',
+        mode:         mode || 'unknown',
+        modeLabel:    MODE_LABELS[mode] || mode || '?',
         map:          b.event?.map || '—',
         brawler:      myBrawler || '—',
         result,
