@@ -1,4 +1,4 @@
-const axios = require('axios');
+﻿const axios = require('axios');
 
 const client = axios.create({
   baseURL: process.env.BRAWL_API_URL || 'https://api.brawlstars.com/v1',
@@ -32,10 +32,29 @@ async function getAllBrawlers() {
   return data.items || [];
 }
 
+// Obtiene un brawler concreto por id (incluye starPowers y gadgets)
+async function getBrawlerById(id) {
+  const { data } = await client.get(`/brawlers/${id}`);
+  return data;
+}
+
+// Ranking global de jugadores con un brawler concreto
+async function getBrawlerRanking(id) {
+  const { data } = await client.get(`/rankings/global/brawlers/${id}/players`);
+  return data.items || [];
+}
+
 // Ranking global de jugadores (top 200 de un país o global)
 async function getRanking(countryCode = 'global') {
   const { data } = await client.get(`/rankings/${countryCode}/players`);
   return data.items || [];
 }
 
-module.exports = { getPlayer, getBattleLog, getAllBrawlers, getRanking };
+// Rotación de eventos actuales
+async function getEventRotation() {
+  const { data } = await client.get('/events/rotation');
+  // La API devuelve el array directamente, sin wrapper { items: [...] }
+  return Array.isArray(data) ? data : (data.items || []);
+}
+
+module.exports = { getPlayer, getBattleLog, getAllBrawlers, getBrawlerById, getBrawlerRanking, getRanking, getEventRotation };

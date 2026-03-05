@@ -1,5 +1,10 @@
 function errorHandler(err, req, res, next) {
-  console.error(`[ERROR] ${req.method} ${req.path}:`, err.message);
+  // Log enriquecido con name + stack para diagnosticar
+  console.error(`[ERROR] ${req.method} ${req.path}`);
+  console.error(`  name:    ${err.name}`);
+  console.error(`  message: ${err.message}`);
+  if (err.original) console.error(`  sql:     ${err.original.sqlMessage || err.original.message}`);
+  if (err.stack && process.env.NODE_ENV !== 'production') console.error(err.stack);
 
   // Error de validación de Sequelize
   if (err.name === 'SequelizeValidationError' || err.name === 'SequelizeUniqueConstraintError') {
