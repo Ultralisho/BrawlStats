@@ -7,14 +7,18 @@ import Dashboard    from './pages/Dashboard';
 import MiCuenta     from './pages/MiCuenta';
 import Estadisticas from './pages/Estadisticas';
 import Leaderboards from './pages/Leaderboards';
+import PlayerProfile from './pages/PlayerProfile';
 import Builds       from './pages/Builds';
-import Brawlers     from './pages/Brawlers';
+import Brawlers       from './pages/Brawlers';
+import BrawlerDetail  from './pages/BrawlerDetail';
 import TierList     from './pages/TierList';
 import CalcCompeti  from './pages/CalcCompeti';
 import Mapas        from './pages/Mapas';
+import MapaDetail   from './pages/MapaDetail';
 import Tutoriales   from './pages/Tutoriales';
 import Reportes     from './pages/Reportes';
 import Admin        from './pages/Admin';
+import Comparador   from './pages/Comparador';
 
 export const AuthContext = createContext(null);
 export function useAuth() { return useContext(AuthContext); }
@@ -42,20 +46,24 @@ export default function App() {
     <AuthContext.Provider value={{ user, login, logout, getToken }}>
       <BrowserRouter>
         <Routes>
-          <Route path="/home"         element={<Home />} />
+          <Route path="/"              element={<Home />} />
           <Route path="/login"         element={<Login />} />
           <Route path="/register"      element={<Register />} />
-          <Route path="/"              element={<PrivateRoute><Dashboard /></PrivateRoute>} />
+          <Route path="/dashboard"     element={<PrivateRoute><Dashboard /></PrivateRoute>} />
           <Route path="/mi-cuenta"     element={<PrivateRoute><MiCuenta /></PrivateRoute>} />
           <Route path="/estadisticas"  element={<PrivateRoute><Estadisticas /></PrivateRoute>} />
           <Route path="/leaderboards"  element={<PrivateRoute><Leaderboards /></PrivateRoute>} />
+          <Route path="/jugador/:tag"  element={<PrivateRoute><PlayerProfile /></PrivateRoute>} />
           <Route path="/builds"        element={<PrivateRoute><Builds /></PrivateRoute>} />
           <Route path="/brawlers"      element={<PrivateRoute><Brawlers /></PrivateRoute>} />
+          <Route path="/brawlers/:id"  element={<PrivateRoute><BrawlerDetail /></PrivateRoute>} />
           <Route path="/tier-list"     element={<PrivateRoute><TierList /></PrivateRoute>} />
           <Route path="/calc-competi"  element={<PrivateRoute><CalcCompeti /></PrivateRoute>} />
           <Route path="/mapas"         element={<PrivateRoute><Mapas /></PrivateRoute>} />
+          <Route path="/mapas/:id"     element={<PrivateRoute><MapaDetail /></PrivateRoute>} />
           <Route path="/tutoriales"    element={<PrivateRoute><Tutoriales /></PrivateRoute>} />
           <Route path="/reportes"      element={<PrivateRoute><Reportes /></PrivateRoute>} />
+          <Route path="/comparador"    element={<PrivateRoute><Comparador /></PrivateRoute>} />
           <Route path="/admin"         element={<AdminRoute><Admin /></AdminRoute>} />
           <Route path="*"              element={<Navigate to="/" replace />} />
         </Routes>
