@@ -1,102 +1,322 @@
-import React from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Layout from '../components/Layout';
+import { Link, useNavigate } from 'react-router-dom';
+import fetchApi from '../services/api';
 import Topbar from '../components/Topbar';
 import KpiCard from '../components/KpiCard';
-import { useAuth } from '../App';
-
-const MATCHES = [
-  { mode:'Gem Grab',   brawler:'Leon',  trophies:'+8', result:'Win'  },
-  { mode:'Brawl Ball', brawler:'Sandy', trophies:'+7', result:'Win'  },
-  { mode:'Showdown',   brawler:'Spike', trophies:'-4', result:'Loss' },
-  { mode:'Hot Zone',   brawler:'Amber', trophies:'+0', result:'Draw' },
-  { mode:'Knockout',   brawler:'Crow',  trophies:'+9', result:'Win'  },
-];
+import TrophyEvolutionChart from '../components/TrophyEvolutionChart';
+import { modeColor } from '../utils/modeColors';
 
 export default function Dashboard() {
-  const { user } = useAuth();
-  return (
+  const navigate = useNavigate();
+  const [player,    setPlayer]    = useState(null);
+  const [battleLog, setBattleLog] = useState([]);
+  const [winRates,  setWinRates]  = useState([]);
+  const [streak,    setStreak]    = useState(null);
+  const [modeDist,  setModeDist]  = useState(null);
+  const [favorite,  setFavorite]  = useState(null);
+  const [noPlayer,  setNoPlayer]  = useState(false);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState(null);
+  const [syncing,   setSyncing]   = useState(false);
+
+  const loadData = useCallback(async () => {
+    setLoading(true); setError(null); setNoPlayer(false);
+    try {
+      const p = await fetchApi('/players/me');
+      setPlayer(p);
+      const [logRes, ratesRes, streakRes, distRes, favRes] = await Promise.allSettled([
+        fetchApi('/stats/battlelog'),
+        fetchApi('/stats/winrate?limit=100'),
+        fetchApi('/stats/streak'),
+        fetchApi('/stats/mode-distribution'),
+        fetchApi('/stats/favorite-brawler'),
+      ]);
+      if (logRes.status    === 'fulfilled') setBattleLog(logRes.value    || []);
+      if (ratesRes.status  === 'fulfilled') setWinRates(ratesRes.value   || []);
+      if (streakRes.status === 'fulfilled') setStreak(streakRes.value    || null);
+      if (distRes.status   === 'fulfilled') setModeDist(distRes.value    || null);
+      if (favRes.status    === 'fulfilled') setFavorite(favRes.value     || null);
+    } catch (err) {
+      if (err.message && err.message.includes('vinculado')) setNoPlayer(true);
+      else setError(err.message);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try { await fetchApi('/players/sync', { method: 'POST' }); await loadData(); }
+    catch (err) { setError(err.message); }
+    finally { setSyncing(false); }
+  };
+
+  const totalWins  = winRates.reduce((s, m) => s + m.wins,  0);
+  const totalGames = winRates.reduce((s, m) => s + m.total, 0);
+  const overallWR  = totalGames > 0 ? Math.round((totalWins / totalGames) * 100) : 0;
+  const brawlers   = [...(player?.rawData?.brawlers || [])].sort((a,b) => b.trophies - a.trophies).slice(0, 12);
+
+  if (loading) return (
     <Layout>
-      <Topbar title="Dashboard" actions={
-        <div className="flex gap-2">
-          <div className="api-status"><div className="api-dot online"></div> API online</div>
-          <button className="btn btn-sm btn-secondary">Sincronizar</button>
-        </div>
-      }/>
-      <div className="page">
-        <div className="card mb-6" style={{ background:'linear-gradient(135deg, var(--bg-surface) 0%, var(--bg-elevated) 100%)', borderColor:'var(--blue-border)' }}>
-          <div className="flex items-center gap-4">
-            <div style={{ width:56, height:56, borderRadius:'var(--r-xl)', background:'var(--blue-dim)', border:'2px solid var(--blue-border)', display:'flex', alignItems:'center', justifyContent:'center', fontFamily:'var(--font-display)', fontSize:24, fontWeight:800, color:'var(--blue)', flexShrink:0 }}>
-              {(user?.name||'U')[0].toUpperCase()}
-            </div>
-            <div>
-              <div style={{ fontFamily:'var(--font-display)', fontSize:20, fontWeight:800 }}>Bienvenido, {user?.name||'jugador'} 👋</div>
-              <div className="t-sm text-3 mt-1" style={{ fontFamily:'var(--font-mono)' }}>{user?.tag||'#———'} · Última sync hace 3 min</div>
-            </div>
-            <div className="flex gap-2" style={{ marginLeft:'auto' }}>
-              <span className="badge badge-win">Online</span>
-              <span className="badge badge-legendary">Rank Maestro</span>
-            </div>
-          </div>
-        </div>
+      <Topbar title="Dashboard" />
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'60vh' }}>
+        <p style={{ color:'var(--color-text-muted)' }}>Cargando datos...</p>
+      </div>
+    </Layout>
+  );
 
-        <div className="grid cols-4 mb-6">
-          <KpiCard label="Trofeos totales" value="47,820" delta="+1,240"  deltaType="up"   sub="últimos 30 días"      icon="🏆" color="blue"   />
-          <KpiCard label="Win Rate"        value="64.3%"  delta="+2.1%"   deltaType="up"   sub="últimas 100 partidas" icon="📈" color="green"  />
-          <KpiCard label="K/D Ratio"       value="2.4"    delta="+0.3"    deltaType="up"   sub="promedio global"      icon="⚔" color="yellow" />
-          <KpiCard label="Partidas/día"    value="14.2"   delta="-2.1"    deltaType="down" sub="promedio 30 días"     icon="📊" color="red"    />
-        </div>
-
-        <div className="grid cols-3 mb-6" style={{ gap:'var(--s5)' }}>
-          <div className="card" style={{ gridColumn:'span 2' }}>
-            <div className="card-header">
-              <div><div className="card-title">Evolución de trofeos</div><div className="t-sm text-3 mt-1" style={{ fontFamily:'var(--font-mono)' }}>Últimos 30 días</div></div>
-            </div>
-            <div className="chart-sim">
-              <div className="chart-grid-lines">{[...Array(5)].map((_,i)=><div key={i} className="chart-grid-line"/>)}</div>
-              <div className="chart-y-labels">{['50K','48K','46K','44K','42K'].map(l=><span key={l} className="chart-y-label">{l}</span>)}</div>
-              <div className="chart-area">
-                <svg className="chart-svg" viewBox="0 0 600 160" preserveAspectRatio="none">
-                  <defs><linearGradient id="g1" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.25"/><stop offset="100%" stopColor="#3B82F6" stopOpacity="0"/></linearGradient></defs>
-                  <path d="M0,120 C60,110 120,105 180,95 C240,85 300,75 360,55 C420,40 480,28 540,20 L600,18 L600,160 L0,160 Z" fill="url(#g1)"/>
-                  <path d="M0,120 C60,110 120,105 180,95 C240,85 300,75 360,55 C420,40 480,28 540,20 L600,18" fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeLinecap="round"/>
-                  <circle cx="600" cy="18" r="4" fill="#3B82F6"/>
-                </svg>
-              </div>
-              <div className="chart-x-labels">{['1 Abr','8 Abr','15 Abr','22 Abr','Hoy'].map(l=><span key={l} className="chart-x-label">{l}</span>)}</div>
-            </div>
-          </div>
-          <div className="card">
-            <div className="card-header"><span className="card-title">Últimas partidas</span></div>
-            {MATCHES.map((m,i)=>(
-              <div key={i} className="stat-row">
-                <div><div className="t-sm" style={{ fontWeight:600 }}>{m.brawler}</div><div className="t-xs text-3">{m.mode}</div></div>
-                <div className="flex items-center gap-2">
-                  <span className={`table-num ${m.result==='Win'?'text-success':m.result==='Loss'?'text-error':'text-warning'}`}>{m.trophies}</span>
-                  <span className={`badge badge-${m.result==='Win'?'win':m.result==='Loss'?'loss':'draw'}`}>{m.result}</span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        <div className="grid cols-2" style={{ gap:'var(--s5)' }}>
-          <div className="card">
-            <div className="card-header"><span className="card-title">Estadísticas rápidas</span></div>
-            {[['Partidas totales','4,218'],['Victorias','2,712'],['Derrotas','1,506'],['Racha más larga','12 wins'],['Brawler más usado','Leon'],['Modo favorito','Gem Grab'],['Trofeos máximos','49,200'],['Tiempo jugado','312 h']].map(([l,v])=>(
-              <div key={l} className="stat-row"><span className="stat-row-label">{l}</span><span className="stat-row-value">{v}</span></div>
-            ))}
-          </div>
-          <div className="card">
-            <div className="card-header"><span className="card-title">Win rate por modo</span></div>
-            {[{label:'Gem Grab',val:71,cls:'progress-green'},{label:'Brawl Ball',val:64,cls:'progress-blue'},{label:'Showdown',val:58,cls:'progress-yellow'},{label:'Hot Zone',val:49,cls:'progress-red'},{label:'Knockout',val:67,cls:'progress-green'},{label:'Bounty',val:55,cls:'progress-yellow'}].map(m=>(
-              <div key={m.label} className="progress-wrap mb-4">
-                <div className="progress-header"><span className="progress-label">{m.label}</span><span className="progress-value">{m.val}%</span></div>
-                <div className="progress-bar-bg"><div className={`progress-bar-fill ${m.cls}`} style={{ width:`${m.val}%` }}/></div>
-              </div>
-            ))}
-          </div>
+  if (noPlayer) return (
+    <Layout>
+      <Topbar title="Dashboard" />
+      <div style={{ padding:'1.5rem', flex:1, overflowY:'auto' }}>
+        <div className="card" style={{ textAlign:'center', padding:'4rem 2rem' }}>
+          <div style={{ fontSize:'4rem', marginBottom:'1rem' }}>🎮</div>
+          <h2 style={{ color:'var(--color-text)', marginBottom:'0.5rem' }}>Sin jugador vinculado</h2>
+          <p style={{ color:'var(--color-text-muted)', marginBottom:'2rem' }}>
+            Vincula tu cuenta de Brawl Stars para ver tus estadisticas en tiempo real.
+          </p>
+          <Link to="/mi-cuenta" className="btn btn-primary">Vincular cuenta</Link>
         </div>
       </div>
     </Layout>
+  );
+
+  return (
+    <Layout>
+      <Topbar title={"Dashboard - " + (player?.name || "")} actions={
+        <button className="btn btn-primary" onClick={handleSync} disabled={syncing}>
+          {syncing ? 'Sincronizando...' : 'Sincronizar'}
+        </button>
+      } />
+      <div style={{ padding:'1.5rem', flex:1, overflowY:'auto' }}>
+        {error && (
+          <div style={{ background:'rgba(239,68,68,0.12)', border:'1px solid #ef4444', borderRadius:'8px', padding:'0.75rem 1rem', marginBottom:'1rem', color:'#ef4444' }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))', gap:'1rem', marginBottom:'1.5rem' }}>
+          <KpiCard label="Trofeos"     value={player?.trophies != null ? player.trophies.toLocaleString() : '-'} />
+          <KpiCard label="Max Trofeos" value={player?.highestTrophies != null ? player.highestTrophies.toLocaleString() : '-'} />
+          <KpiCard label="Nivel"       value={player?.level ?? '-'} />
+          <KpiCard label="Win Rate"    value={overallWR + '%'} sub={totalWins + ' / ' + totalGames + ' partidas'} />
+        </div>
+
+        <div style={{ marginBottom:'1.5rem' }}>
+          <TrophyEvolutionChart title="Evolucion de trofeos · ultimos 30 dias" initialDays={30} />
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(280px,1fr))', gap:'1.5rem', marginBottom:'1.5rem' }}>
+          <div className="card">
+            <h3 className="card-title">Racha actual</h3>
+            <StreakWidget streak={streak} />
+          </div>
+          <div className="card">
+            <h3 className="card-title">Brawler favorito</h3>
+            <FavoriteWidget favorite={favorite} />
+          </div>
+          <div className="card">
+            <h3 className="card-title">Modos jugados</h3>
+            <ModeDistribution data={modeDist} />
+          </div>
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(380px,1fr))', gap:'1.5rem', marginBottom:'1.5rem' }}>
+          <div className="card">
+            <h3 className="card-title">Ultimas partidas</h3>
+            {battleLog.length === 0
+              ? <p style={{ color:'var(--color-text-muted)' }}>No hay partidas disponibles.</p>
+              : (
+                <table className="table">
+                  <thead><tr><th>Modo / Mapa</th><th>Brawler</th><th>Resultado</th><th>Trofeos</th></tr></thead>
+                  <tbody>
+                    {battleLog.slice(0,10).map((b,i) => (
+                      <tr key={i}>
+                        <td>
+                          <div style={{ fontWeight:500 }}>{b.mode}</div>
+                          <div style={{ color:'var(--color-text-muted)', fontSize:'0.8em' }}>{b.map}</div>
+                        </td>
+                        <td>
+                          <Link to={'/brawlers?search=' + encodeURIComponent(b.brawler)} style={{ color:'var(--color-text)', fontWeight:500 }}>
+                            {b.brawler}
+                          </Link>
+                        </td>
+                        <td>
+                          <span className={"badge " + (b.result === 'Win' ? 'badge-win' : b.result === 'Loss' ? 'badge-loss' : 'badge-default')}>
+                            {b.result}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight:600, color: String(b.trophyChange).startsWith('+') ? '#22c55e' : '#ef4444' }}>
+                          {b.trophyChange}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )
+            }
+          </div>
+
+          <div className="card">
+            <h3 className="card-title">Win Rate por Modo (ultimas 100)</h3>
+            {winRates.length === 0
+              ? <p style={{ color:'var(--color-text-muted)' }}>Sin datos de partidas.</p>
+              : (
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+                  {[...winRates].sort((a,b) => b.total - a.total).map((m,i) => {
+                    const color = modeColor(m.mode);
+                    return (
+                      <div key={i}>
+                        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'4px', fontSize:'0.875em' }}>
+                          <span style={{ color:'var(--color-text)' }}>{m.mode}</span>
+                          <span style={{ color:'var(--color-gold)' }}>
+                            {m.winRate}% ({m.wins}/{m.total})
+                          </span>
+                        </div>
+                        <div className="progress-bar-bg">
+                          <div className="progress-bar-fill" style={{ width: m.winRate + '%', background: color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            }
+          </div>
+        </div>
+
+        {brawlers.length > 0 && (
+          <div className="card">
+            <h3 className="card-title">Mis Brawlers - Top 12</h3>
+            <div className="brawler-grid">
+              {brawlers.map(b => (
+                <div key={b.id} className="brawler-card" style={{ cursor:'pointer' }} onClick={() => navigate('/brawlers?search=' + encodeURIComponent(b.name))}>
+                  <div className="brawler-name">{b.name}</div>
+                  <div className="brawler-trophies">{b.trophies} trofeos</div>
+                  <div style={{ fontSize:'0.75em', color:'var(--color-text-muted)', marginTop:'4px' }}>
+                    Power {b.power} - Rank {b.rank}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <div style={{ display:'flex', gap:'1rem', flexWrap:'wrap', marginTop:'1rem' }}>
+          {player?.club && (
+            <div className="card" style={{ display:'flex', alignItems:'center', gap:'1rem', flex:1, minWidth:'200px' }}>
+              <div>
+                <div style={{ color:'var(--color-text-muted)', fontSize:'0.75em' }}>CLUB</div>
+                <div style={{ color:'var(--color-text)', fontWeight:600 }}>{player.club}</div>
+              </div>
+            </div>
+          )}
+          <div className="card" style={{ display:'flex', alignItems:'center', gap:'1rem', flex:1, minWidth:'200px' }}>
+            <div>
+              <div style={{ color:'var(--color-text-muted)', fontSize:'0.75em' }}>TAG</div>
+              <div style={{ color:'var(--color-gold)', fontWeight:600, fontFamily:'monospace' }}>{player?.tag}</div>
+            </div>
+          </div>
+        </div>
+
+        {player?.lastSync && (
+          <p style={{ color:'var(--color-text-muted)', fontSize:'0.75em', textAlign:'right', marginTop:'0.5rem' }}>
+            Ultima sync: {new Date(player.lastSync).toLocaleString('es-ES')}
+          </p>
+        )}
+      </div>
+    </Layout>
+  );
+}
+
+/* ── Widgets ──────────────────────────────────────────────────────────── */
+
+function StreakWidget({ streak }) {
+  if (!streak || !streak.recent || streak.recent.length === 0) {
+    return <p style={{ color:'var(--color-text-muted)' }}>Sin partidas registradas todavia.</p>;
+  }
+  const { streakKind, streakLen, recent } = streak;
+  const color = streakKind === 'Win' ? '#22c55e' : streakKind === 'Loss' ? '#ef4444' : 'var(--color-text-muted)';
+  return (
+    <div>
+      <div style={{ display:'flex', alignItems:'baseline', gap:'0.5rem', marginBottom:'0.75rem' }}>
+        <span style={{ fontSize:'2.4em', fontWeight:700, color, fontFamily:'monospace' }}>{streakLen}</span>
+        <span style={{ color:'var(--color-text-muted)', fontSize:'0.9em' }}>
+          {streakKind === 'Win' ? 'victorias seguidas' : streakKind === 'Loss' ? 'derrotas seguidas' : '—'}
+        </span>
+      </div>
+      <div style={{ display:'flex', gap:'4px' }}>
+        {recent.slice(0, 10).map((r, i) => {
+          const c = r === 'Win' ? '#22c55e' : r === 'Loss' ? '#ef4444' : '#6b7280';
+          return (
+            <span key={i} title={r} style={{
+              width: '22px', height: '22px', borderRadius: '4px',
+              background: c + '22', color: c, border: '1px solid ' + c + '55',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontSize: '11px', fontWeight: 700,
+            }}>
+              {r === 'Win' ? 'W' : r === 'Loss' ? 'L' : 'D'}
+            </span>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FavoriteWidget({ favorite }) {
+  const fav = favorite?.favorite;
+  if (!fav) return <p style={{ color:'var(--color-text-muted)' }}>Sin partidas registradas todavia.</p>;
+  return (
+    <div>
+      <div style={{ fontSize:'1.4em', fontWeight:700, color:'var(--color-gold)', marginBottom:'0.4rem' }}>
+        {fav.name}
+      </div>
+      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.5rem', fontSize:'0.85em' }}>
+        <div>
+          <div style={{ color:'var(--color-text-muted)' }}>Partidas</div>
+          <div style={{ fontWeight:600, fontFamily:'monospace' }}>{fav.games}</div>
+        </div>
+        <div>
+          <div style={{ color:'var(--color-text-muted)' }}>Win Rate</div>
+          <div style={{ fontWeight:600, fontFamily:'monospace', color:'#22c55e' }}>{fav.winRate}%</div>
+        </div>
+        <div style={{ gridColumn:'1/-1' }}>
+          <div style={{ color:'var(--color-text-muted)' }}>Trofeos netos</div>
+          <div style={{ fontWeight:600, fontFamily:'monospace', color: fav.trophyChange >= 0 ? '#22c55e' : '#ef4444' }}>
+            {fav.trophyChange >= 0 ? '+' : ''}{fav.trophyChange}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ModeDistribution({ data }) {
+  if (!data || !data.modes || data.modes.length === 0) {
+    return <p style={{ color:'var(--color-text-muted)' }}>Sin partidas registradas todavia.</p>;
+  }
+  const top = data.modes.slice(0, 6);
+  return (
+    <div style={{ display:'flex', flexDirection:'column', gap:'0.5rem' }}>
+      <div style={{ color:'var(--color-text-muted)', fontSize:'0.8em', marginBottom:'0.25rem' }}>
+        {data.total} partidas analizadas
+      </div>
+      {top.map(m => {
+        const color = modeColor(m.mode);
+        return (
+          <div key={m.mode}>
+            <div style={{ display:'flex', justifyContent:'space-between', fontSize:'0.85em', marginBottom:'2px' }}>
+              <span>{m.mode}</span>
+              <span style={{ fontFamily:'monospace', color }}>{m.count} · {m.percent}%</span>
+            </div>
+            <div style={{ height:'6px', background:'rgba(255,255,255,0.05)', borderRadius:'3px', overflow:'hidden' }}>
+              <div style={{ width: m.percent + '%', height:'100%', background: color, borderRadius:'3px' }}/>
+            </div>
+          </div>
+        );
+      })}
+    </div>
   );
 }
