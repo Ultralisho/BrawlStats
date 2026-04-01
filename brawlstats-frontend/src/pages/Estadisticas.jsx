@@ -1,110 +1,272 @@
-import React, { useState } from 'react';
+﻿import { useState, useEffect, useCallback } from 'react';
+import TrophyEvolutionChart from '../components/TrophyEvolutionChart';
 import Layout from '../components/Layout';
+import { Link } from 'react-router-dom';
+import fetchApi from '../services/api';
 import Topbar from '../components/Topbar';
 import KpiCard from '../components/KpiCard';
-
-const ROWS = [
-  { rank:1, name:'Leon',  trophies:1840, games:312, wr:'74%', kd:3.2, rarity:'legendary', wrCls:'text-success' },
-  { rank:2, name:'Sandy', trophies:1720, games:285, wr:'69%', kd:2.8, rarity:'legendary', wrCls:'text-success' },
-  { rank:3, name:'Spike', trophies:1680, games:240, wr:'61%', kd:2.4, rarity:'legendary', wrCls:'text-warning' },
-  { rank:4, name:'Amber', trophies:1520, games:198, wr:'66%', kd:2.9, rarity:'legendary', wrCls:'text-success' },
-  { rank:5, name:'Crow',  trophies:1480, games:176, wr:'63%', kd:2.6, rarity:'legendary', wrCls:'text-success' },
-];
-const RK = {1:'rank-1',2:'rank-2',3:'rank-3'};
+import { modeColor } from '../utils/modeColors';
 
 export default function Estadisticas() {
-  const [range, setRange] = useState('30d');
+  const [player,    setPlayer]    = useState(null);
+  const [battleLog, setBattleLog] = useState([]);
+  const [winRates,  setWinRates]  = useState([]);
+  const [topBrawlers, setTopBrawlers] = useState([]);
+  const [noPlayer,  setNoPlayer]  = useState(false);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState(null);
+
+  const loadData = useCallback(async () => {
+    setLoading(true); setError(null); setNoPlayer(false);
+    try {
+      const p = await fetchApi('/players/me');
+      setPlayer(p);
+      const [logRes, ratesRes, favRes] = await Promise.allSettled([
+        fetchApi('/stats/battlelog'),
+        fetchApi('/stats/winrate?limit=100'),
+        fetchApi('/stats/favorite-brawler'),
+      ]);
+      if (logRes.status   === 'fulfilled') setBattleLog(logRes.value   || []);
+      if (ratesRes.status === 'fulfilled') setWinRates(ratesRes.value  || []);
+      if (favRes.status   === 'fulfilled') setTopBrawlers(favRes.value?.top || []);
+    } catch (err) {
+      if (err.message && err.message.includes('vinculado')) setNoPlayer(true);
+      else setError(err.message);
+    } finally { setLoading(false); }
+  }, []);
+
+  useEffect(() => { loadData(); }, [loadData]);
+
+  const brawlers   = [...(player?.rawData?.brawlers || [])].sort((a,b) => b.trophies - a.trophies);
+  const brawlerIdByName = new Map(brawlers.map(b => [b.name.toLowerCase(), b.id]));
+  const totalWins  = winRates.reduce((s, m) => s + m.wins,  0);
+  const totalGames = winRates.reduce((s, m) => s + m.total, 0);
+  const overallWR  = totalGames > 0 ? Math.round((totalWins / totalGames) * 100) : 0;
+  const maxTrophies = brawlers[0]?.trophies || 1;
+
+  if (loading) return (
+    <Layout>
+      <Topbar title="Estadisticas" />
+      <div style={{ display:'flex', alignItems:'center', justifyContent:'center', minHeight:'60vh' }}>
+        <p style={{ color:'var(--color-text-muted)' }}>Cargando estadisticas...</p>
+      </div>
+    </Layout>
+  );
+
+  if (noPlayer) return (
+    <Layout>
+      <Topbar title="Estadisticas" />
+      <div style={{ padding:'1.5rem', flex:1, overflowY:'auto' }}>
+        <div className="card" style={{ textAlign:'center', padding:'4rem 2rem' }}>
+          <div style={{ fontSize:'4rem', marginBottom:'1rem' }}>📊</div>
+          <h2 style={{ color:'var(--color-text)', marginBottom:'0.5rem' }}>Sin jugador vinculado</h2>
+          <p style={{ color:'var(--color-text-muted)', marginBottom:'2rem' }}>
+            Vincula tu cuenta de Brawl Stars para acceder a tus estadisticas.
+          </p>
+          <Link to="/mi-cuenta" className="btn btn-primary">Vincular cuenta</Link>
+        </div>
+      </div>
+    </Layout>
+  );
+
   return (
     <Layout>
-      <Topbar title="Estadísticas" actions={
-        <div className="flex gap-2">
-          {['7d','30d','90d'].map(r=>(
-            <button key={r} className={`btn btn-sm ${range===r?'btn-primary':'btn-secondary'}`} onClick={()=>setRange(r)}>{r}</button>
-          ))}
-        </div>
-      }/>
-      <div className="page">
-        <div className="grid cols-4 mb-6">
-          <KpiCard label="Trofeos totales" value="47,820" delta="+1,240"  deltaType="up"   sub="últimos 30 días"      icon="🏆" color="blue"   />
-          <KpiCard label="Win Rate"        value="64.3%"  delta="+2.1%"   deltaType="up"   sub="últimas 100 partidas" icon="📈" color="green"  />
-          <KpiCard label="K/D Ratio"       value="2.4"    delta="+0.3"    deltaType="up"   sub="promedio global"      icon="⚔" color="yellow" />
-          <KpiCard label="Partidas/día"    value="14.2"   delta="-2.1"    deltaType="down" sub="promedio 30 días"     icon="📊" color="red"    />
+      <Topbar title={"Estadisticas - " + (player?.name || "")} />
+      <div style={{ padding:'1.5rem', flex:1, overflowY:'auto' }}>
+        {error && (
+          <div style={{ background:'rgba(239,68,68,0.12)', border:'1px solid #ef4444', borderRadius:'8px', padding:'0.75rem 1rem', marginBottom:'1rem', color:'#ef4444' }}>
+            {error}
+          </div>
+        )}
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))', gap:'1rem', marginBottom:'1.5rem' }}>
+          <KpiCard label="Trofeos totales"  value={player?.trophies != null ? player.trophies.toLocaleString() : '-'} />
+          <KpiCard label="Maximo historico" value={player?.highestTrophies != null ? player.highestTrophies.toLocaleString() : '-'} />
+          <KpiCard label="Win Rate global"  value={overallWR + '%'} sub={totalWins + '/' + totalGames + ' partidas'} />
+          <KpiCard label="Brawlers"         value={brawlers.length} />
         </div>
 
-        <div className="grid cols-3 mb-6" style={{ gap:'var(--s5)' }}>
-          <div className="card" style={{ gridColumn:'span 2' }}>
-            <div className="card-header"><div><div className="card-title">Evolución de trofeos</div><div className="t-sm text-3 mt-1" style={{ fontFamily:'var(--font-mono)' }}>Últimos 30 días · API Supercell</div></div></div>
-            <div className="chart-sim">
-              <div className="chart-grid-lines">{[...Array(5)].map((_,i)=><div key={i} className="chart-grid-line"/>)}</div>
-              <div className="chart-y-labels">{['50K','48K','46K','44K','42K'].map(l=><span key={l} className="chart-y-label">{l}</span>)}</div>
-              <div className="chart-area">
-                <svg className="chart-svg" viewBox="0 0 600 160" preserveAspectRatio="none">
-                  <defs><linearGradient id="g2" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#3B82F6" stopOpacity="0.25"/><stop offset="100%" stopColor="#3B82F6" stopOpacity="0"/></linearGradient></defs>
-                  <path d="M0,120 C60,110 120,105 180,95 C240,85 300,75 360,55 C420,40 480,28 540,20 L600,18 L600,160 L0,160 Z" fill="url(#g2)"/>
-                  <path d="M0,120 C60,110 120,105 180,95 C240,85 300,75 360,55 C420,40 480,28 540,20 L600,18" fill="none" stroke="#3B82F6" strokeWidth="2.5" strokeLinecap="round"/>
-                  <circle cx="600" cy="18" r="4" fill="#3B82F6"/>
-                </svg>
+        <div style={{ marginBottom:'1.5rem' }}>
+          <TrophyEvolutionChart title="Evolucion de trofeos · ultimos 30 dias" initialDays={30} />
+        </div>
+
+        <div className="card" style={{ marginBottom:'1.5rem' }}>
+          <h3 className="card-title">Top 3 brawlers por rendimiento</h3>
+          {topBrawlers.length === 0
+            ? <p style={{ color:'var(--color-text-muted)' }}>Sincroniza para acumular partidas y ver tus mejores brawlers.</p>
+            : (
+              <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(220px,1fr))', gap:'1rem' }}>
+                {topBrawlers.map((b, i) => {
+                  const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : '🥉';
+                  return (
+                    <div key={b.name} style={{ background:'rgba(255,255,255,0.03)', border:'1px solid var(--border, rgba(255,255,255,0.08))', borderRadius:'10px', padding:'1rem' }}>
+                      <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', marginBottom:'0.75rem' }}>
+                        {b.brawlerId && (
+                          <img
+                            src={`https://cdn.brawlify.com/brawlers/borders/${b.brawlerId}.png`}
+                            alt={b.name}
+                            style={{ width:52, height:52, borderRadius:8, background:'var(--bg-elevated)', flexShrink:0 }}
+                            onError={e => { e.currentTarget.style.display = 'none'; }}
+                          />
+                        )}
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                            <Link to={'/brawlers?search=' + encodeURIComponent(b.name)} style={{ fontSize:'1.1em', fontWeight:700, color:'var(--color-text)', overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' }}>{b.name}</Link>
+                            <span style={{ fontSize:'1.3em', flexShrink:0, marginLeft:6 }}>{medal}</span>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.4rem 0.75rem', fontSize:'0.85em' }}>
+                        <div>
+                          <div style={{ color:'var(--color-text-muted)', fontSize:'0.85em' }}>Partidas</div>
+                          <div style={{ fontFamily:'monospace', fontWeight:600 }}>{b.games}</div>
+                        </div>
+                        <div>
+                          <div style={{ color:'var(--color-text-muted)', fontSize:'0.85em' }}>Win Rate</div>
+                          <div style={{ fontFamily:'monospace', fontWeight:600, color:'#22c55e' }}>{b.winRate}%</div>
+                        </div>
+                        <div style={{ gridColumn:'1/-1' }}>
+                          <div style={{ color:'var(--color-text-muted)', fontSize:'0.85em' }}>Trofeos netos</div>
+                          <div style={{ fontFamily:'monospace', fontWeight:600, color: b.trophyChange >= 0 ? '#22c55e' : '#ef4444' }}>
+                            {b.trophyChange >= 0 ? '+' : ''}{b.trophyChange}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <div className="chart-x-labels">{['1 Abr','8 Abr','15 Abr','22 Abr','Hoy'].map(l=><span key={l} className="chart-x-label">{l}</span>)}</div>
-            </div>
-          </div>
+            )
+          }
+        </div>
+
+        <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(380px,1fr))', gap:'1.5rem', marginBottom:'1.5rem' }}>
           <div className="card">
-            <div className="card-header"><span className="card-title">Win rate por modo</span></div>
-            {[{label:'Gem Grab',val:71,cls:'progress-green'},{label:'Brawl Ball',val:64,cls:'progress-blue'},{label:'Showdown',val:58,cls:'progress-yellow'},{label:'Hot Zone',val:49,cls:'progress-red'},{label:'Knockout',val:67,cls:'progress-green'},{label:'Bounty',val:55,cls:'progress-yellow'}].map(m=>(
-              <div key={m.label} className="progress-wrap mb-4">
-                <div className="progress-header"><span className="progress-label">{m.label}</span><span className="progress-value">{m.val}%</span></div>
-                <div className="progress-bar-bg"><div className={`progress-bar-fill ${m.cls}`} style={{ width:`${m.val}%` }}/></div>
-              </div>
-            ))}
+            <h3 className="card-title">Win Rate por Modo (ultimas 100)</h3>
+            {winRates.length === 0
+              ? <p style={{ color:'var(--color-text-muted)' }}>Sin partidas registradas.</p>
+              : (
+                <div style={{ display:'flex', flexDirection:'column', gap:'0.75rem' }}>
+                  {[...winRates].sort((a,b) => b.total - a.total).map((m,i) => {
+                    const color = modeColor(m.mode);
+                    return (
+                      <div key={i}>
+                        <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'4px', fontSize:'0.875em' }}>
+                          <span style={{ color:'var(--color-text)' }}>{m.mode}</span>
+                          <span style={{ color:'var(--color-gold)' }}>{m.winRate}% ({m.wins}/{m.total})</span>
+                        </div>
+                        <div className="progress-bar-bg">
+                          <div className="progress-bar-fill" style={{ width: m.winRate + '%', background: color }} />
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )
+            }
+          </div>
+
+          <div className="card">
+            <h3 className="card-title">Ultimas partidas</h3>
+            {battleLog.length === 0
+              ? <p style={{ color:'var(--color-text-muted)' }}>No hay partidas disponibles.</p>
+              : (
+                <table className="table">
+                  <thead><tr><th>Modo</th><th>Brawler</th><th>Resultado</th><th>+/-</th></tr></thead>
+                  <tbody>
+                    {battleLog.slice(0,12).map((b,i) => {
+                      const bid = brawlerIdByName.get((b.brawler || '').toLowerCase());
+                      return (
+                      <tr key={i}>
+                        <td>
+                          <div style={{ fontSize:'0.9em' }}>{b.modeLabel || b.mode}</div>
+                          <div style={{ color:'var(--color-text-muted)', fontSize:'0.8em' }}>{b.map}</div>
+                        </td>
+                        <td>
+                          <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                            {bid && (
+                              <img
+                                src={`https://cdn.brawlify.com/brawlers/borders/${bid}.png`}
+                                alt={b.brawler}
+                                style={{ width:28, height:28, borderRadius:4, background:'var(--bg-elevated)', flexShrink:0 }}
+                                onError={e => { e.currentTarget.style.display = 'none'; }}
+                              />
+                            )}
+                            <Link to={'/brawlers?search=' + encodeURIComponent(b.brawler)} style={{ color:'var(--color-text)', fontWeight:500 }}>
+                              {b.brawler}
+                            </Link>
+                          </div>
+                        </td>
+                        <td>
+                          <span className={"badge " + (b.result === 'Win' ? 'badge-win' : b.result === 'Loss' ? 'badge-loss' : 'badge-default')}>
+                            {b.result}
+                          </span>
+                        </td>
+                        <td style={{ fontWeight:600, color: String(b.trophyChange).startsWith('+') ? '#22c55e' : '#ef4444' }}>
+                          {b.trophyChange}
+                        </td>
+                      </tr>
+                    );
+                    })}
+                  </tbody>
+                </table>
+              )
+            }
           </div>
         </div>
 
-        <div className="grid cols-2 mb-6" style={{ gap:'var(--s5)' }}>
-          <div className="card">
-            <div className="card-header"><span className="card-title">Brawlers más usados (top 7)</span></div>
-            <div className="bar-chart" style={{ height:140, alignItems:'flex-end', gap:'var(--s3)' }}>
-              {[{name:'Leon',h:'90%',c:'var(--chart-1)'},{name:'Sandy',h:'75%',c:'var(--chart-2)'},{name:'Spike',h:'68%',c:'var(--chart-3)'},{name:'Amber',h:'52%',c:'var(--chart-4)'},{name:'Buzz',h:'45%',c:'var(--chart-5)'},{name:'Crow',h:'38%',c:'var(--chart-6)'},{name:'Mortis',h:'30%',c:'var(--chart-1)',op:0.6}].map(b=>(
-                <div key={b.name} className="bar-group"><div className="bar" style={{ height:b.h, background:b.c, opacity:b.op||1 }}/><span className="bar-label">{b.name}</span></div>
-              ))}
-            </div>
-          </div>
-          <div className="card">
-            <div className="card-header"><span className="card-title">Estadísticas detalladas</span></div>
-            {[['Partidas totales','4,218',''],['Victorias','2,712','text-success'],['Derrotas','1,506','text-error'],['Racha más larga','12 wins',''],['Brawler más usado','Leon','text-blue'],['Modo favorito','Gem Grab','text-blue'],['Trofeos máximos','49,200',''],['Tiempo jugado','312 h','']].map(([l,v,c])=>(
-              <div key={l} className="stat-row"><span className="stat-row-label">{l}</span><span className={`stat-row-value ${c}`}>{v}</span></div>
-            ))}
-          </div>
-        </div>
-
-        <div className="t-label mb-4">▸ Rendimiento por brawler</div>
         <div className="card">
-          <div className="card-header">
-            <div><div className="card-title">Estadísticas por brawler</div><div className="t-sm text-3 mt-1" style={{ fontFamily:'var(--font-mono)' }}>Ordenado por trofeos</div></div>
-            <div className="flex gap-2">
-              <select className="form-select btn-sm" style={{ width:'auto', padding:'5px 11px', fontSize:12 }}><option>Todos los modos</option><option>Gem Grab</option><option>Brawl Ball</option></select>
-              <button className="btn btn-sm btn-secondary">Exportar</button>
-            </div>
-          </div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead><tr><th>#</th><th className="sorted">Brawler ↑</th><th>Trofeos</th><th>Partidas</th><th>Win Rate</th><th>K/D</th><th>Rareza</th></tr></thead>
-              <tbody>
-                {ROWS.map(r=>(
-                  <tr key={r.name}>
-                    <td className={`table-rank ${RK[r.rank]||''}`}>{r.rank}</td>
-                    <td><div className="flex items-center gap-2"><div className="table-avatar"><span className="av-placeholder" style={{ fontSize:9 }}>img</span></div><div className="table-name">{r.name}</div></div></td>
-                    <td className="table-num">{r.trophies.toLocaleString()}</td>
-                    <td className="t-sm text-2">{r.games}</td>
-                    <td><span className={r.wrCls} style={{ fontFamily:'var(--font-mono)', fontWeight:600 }}>{r.wr}</span></td>
-                    <td className="t-sm text-2">{r.kd}</td>
-                    <td><span className={`badge badge-${r.rarity}`}>{r.rarity}</span></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <h3 className="card-title">Coleccion completa de brawlers ({brawlers.length})</h3>
+          {brawlers.length === 0
+            ? <p style={{ color:'var(--color-text-muted)' }}>Sin datos de brawlers.</p>
+            : (
+              <div style={{ overflowX:'auto' }}>
+                <table className="table">
+                  <thead>
+                    <tr><th>Brawler</th><th>Trofeos</th><th>Max</th><th>Power</th><th>Rank</th><th>Progreso</th></tr>
+                  </thead>
+                  <tbody>
+                    {brawlers.map(b => (
+                      <tr key={b.id}>
+                        <td>
+                          <div style={{ display:'flex', alignItems:'center', gap:10 }}>
+                            <img
+                              src={`https://cdn.brawlify.com/brawlers/borders/${b.id}.png`}
+                              alt={b.name}
+                              style={{ width:36, height:36, borderRadius:6, background:'var(--bg-elevated)', flexShrink:0 }}
+                              onError={e => { e.currentTarget.style.display = 'none'; }}
+                            />
+                            <Link to={'/brawlers?search=' + encodeURIComponent(b.name)} style={{ color:'var(--color-text)', fontWeight:500 }}>
+                              {b.name}
+                            </Link>
+                          </div>
+                        </td>
+                        <td style={{ color:'var(--color-gold)' }}>{b.trophies}</td>
+                        <td style={{ color:'var(--color-text-muted)' }}>{b.highestTrophies}</td>
+                        <td>
+                          <span style={{ background:'rgba(250,204,21,0.15)', color:'var(--color-gold)', borderRadius:'4px', padding:'2px 8px', fontSize:'0.85em', fontWeight:600 }}>
+                            P{b.power}
+                          </span>
+                        </td>
+                        <td>{b.rank}</td>
+                        <td style={{ minWidth:'120px' }}>
+                          <div className="progress-bar-bg">
+                            <div className="progress-bar-fill" style={{ width: Math.round((b.trophies / maxTrophies) * 100) + '%' }} />
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          }
         </div>
       </div>
     </Layout>
   );
 }
+
+
+
+
