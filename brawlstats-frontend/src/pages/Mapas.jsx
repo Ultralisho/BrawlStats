@@ -1,208 +1,262 @@
-import React, { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
+import { Link } from 'react-router-dom';
 import Layout from '../components/Layout';
+import fetchApi from '../services/api';
 import Topbar from '../components/Topbar';
 
-const MAPS = [
-  { name:'Double Swoosh',  mode:'Gem Grab',   env:'Gem Fort',    size:'Medio',   best:'Leon, Sandy' },
-  { name:'Super Beach',    mode:'Brawl Ball', env:'Beachside',   size:'Grande',  best:'Amber, Frank' },
-  { name:'Skull Creek',    mode:'Showdown',   env:'Wild West',   size:'Grande',  best:'Spike, Crow' },
-  { name:'Open Business',  mode:'Hot Zone',   env:'Business',    size:'Medio',   best:'Buzz, Sandy' },
-  { name:'Goldarm Gulch',  mode:'Knockout',   env:'Wild West',   size:'Pequeño', best:'Piper, Bea' },
-  { name:'Pinball Dreams', mode:'Brawl Ball', env:'Stunt Show',  size:'Medio',   best:'Bibi, Bull' },
-  { name:'Boundary Layer', mode:'Hot Zone',   env:'Mortis Tomb', size:'Pequeño', best:'Surge, Mortis' },
-  { name:'Belle\'s Rock',  mode:'Knockout',   env:'Wild West',   size:'Medio',   best:'Belle, Piper' },
-];
+const MODE_ICONS = {
+  'Gem Grab':     '💎',
+  'Brawl Ball':   '⚽',
+  'Showdown':     '💀',
+  'Solo Showdown':'💀',
+  'Duo Showdown': '💀',
+  'Hot Zone':     '🔥',
+  'Knockout':     '🥊',
+  'Bounty':       '⭐',
+  'Heist':        '💰',
+  'Duels':        '⚔️',
+  'Wipeout':      '💥',
+  'Siege':        '🛡️',
+};
 
-export function Mapas() {
-  const [mode, setMode] = useState('Todos');
-  const filtered = mode === 'Todos' ? MAPS : MAPS.filter(m => m.mode === mode);
-  const modes = ['Todos', ...new Set(MAPS.map(m => m.mode))];
+function timeLeft(endTime) {
+  if (!endTime) return null;
+  const ms = new Date(endTime).getTime() - Date.now();
+  if (ms <= 0) return null;
+  const h = Math.floor(ms / 3600000);
+  const m = Math.floor((ms % 3600000) / 60000);
+  if (h >= 24) return Math.floor(h / 24) + 'd ' + (h % 24) + 'h';
+  return h + 'h ' + m + 'm';
+}
+
+function MapImage({ src, mode, name }) {
+  const [failed, setFailed] = useState(false);
+  const ratio = { width: '100%', aspectRatio: '1 / 1', borderRadius: '8px', marginBottom: '0.75rem' };
+  if (failed || !src) {
+    return (
+      <div style={{
+        ...ratio,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)',
+        flexDirection: 'column', gap: '0.5rem',
+      }}>
+        <span style={{ fontSize: '3rem' }}>{MODE_ICONS[mode] || '🗺️'}</span>
+        <span style={{ fontSize: '0.75em', color: 'var(--text-2)' }}>{name}</span>
+      </div>
+    );
+  }
+  return (
+    <img
+      src={src}
+      alt={name}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      style={{ ...ratio, objectFit: 'cover', display: 'block', background: 'rgba(255,255,255,0.03)' }}
+    />
+  );
+}
+
+function MapCard({ m, event }) {
+  const modeName  = m.gameMode?.name || '—';
+  const modeColor = m.gameMode?.color || 'var(--text-3)';
+  const remaining = event ? timeLeft(event.endTime) : null;
+
+  return (
+    <Link
+      to={'/mapas/' + m.id}
+      className="card"
+      style={{
+        position: 'relative', overflow: 'hidden', display: 'block',
+        color: 'inherit', textDecoration: 'none', cursor: 'pointer',
+        border: event ? '1px solid rgba(34,197,94,0.35)' : undefined,
+        transition: 'border-color .15s, transform .15s, box-shadow .15s',
+      }}
+    >
+      {event && (
+        <div style={{
+          position: 'absolute', top: 10, right: 10, zIndex: 2,
+          background: 'rgba(34,197,94,0.18)', border: '1px solid rgba(34,197,94,0.45)',
+          borderRadius: 6, padding: '2px 8px',
+          fontSize: 10, fontWeight: 700, color: '#22c55e', letterSpacing: '0.06em',
+          textTransform: 'uppercase',
+        }}>
+          ACTIVO
+        </div>
+      )}
+
+      <MapImage src={m.imageUrl} mode={modeName} name={m.name} />
+
+      <div style={{ fontSize: '1.05em', fontWeight: 600, color: 'var(--text-1)', marginBottom: '0.35rem' }}>
+        {m.name}
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+        <span style={{ fontSize: '1rem' }}>{MODE_ICONS[modeName] || '🎮'}</span>
+        <span style={{ fontSize: '0.85em', fontWeight: 600, color: modeColor }}>{modeName}</span>
+      </div>
+      {m.environment?.name && (
+        <div style={{ marginTop: '0.4rem', fontSize: '0.75em', color: 'var(--text-3)' }}>
+          {m.environment.name}
+        </div>
+      )}
+      {remaining && (
+        <div style={{ marginTop: '0.4rem', fontSize: '0.75em', color: '#22c55e', fontFamily: 'var(--font-mono)' }}>
+          ⏱ {remaining} restante
+        </div>
+      )}
+    </Link>
+  );
+}
+
+function SectionHeader({ label, count }) {
+  return (
+    <div style={{
+      display: 'flex', alignItems: 'center', gap: 12, marginBottom: '1rem',
+    }}>
+      <span style={{
+        fontSize: 11, fontWeight: 700, letterSpacing: '0.1em',
+        textTransform: 'uppercase', color: 'var(--text-3)',
+      }}>
+        {label}
+      </span>
+      {count != null && (
+        <span style={{
+          background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+          borderRadius: 999, padding: '1px 8px',
+          fontSize: 11, fontWeight: 700, color: 'var(--text-2)', fontFamily: 'var(--font-mono)',
+        }}>
+          {count}
+        </span>
+      )}
+      <div style={{ flex: 1, height: 1, background: 'var(--border)' }} />
+    </div>
+  );
+}
+
+export default function Mapas() {
+  const [maps,    setMaps]    = useState([]);
+  const [events,  setEvents]  = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error,   setError]   = useState(null);
+  const [modeF,   setModeF]   = useState('all');
+  const [search,  setSearch]  = useState('');
+
+  useEffect(() => {
+    Promise.all([
+      fetchApi('/brawlers/maps'),
+      fetchApi('/events/rotation').catch(() => []),
+    ])
+      .then(([mapsData, eventsData]) => {
+        setMaps(Array.isArray(mapsData) ? mapsData : []);
+        setEvents(Array.isArray(eventsData) ? eventsData : []);
+      })
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  // Mapa de eventId → evento para lookup O(1)
+  const eventById = useMemo(() => {
+    const m = new Map();
+    events.forEach(ev => { if (ev.eventId) m.set(String(ev.eventId), ev); });
+    return m;
+  }, [events]);
+
+  const modes = useMemo(
+    () => ['all', ...new Set(maps.map(m => m.gameMode?.name).filter(Boolean))],
+    [maps]
+  );
+
+  const filtered = useMemo(() => maps.filter(m => {
+    const matchMode   = modeF === 'all' || m.gameMode?.name === modeF;
+    const matchSearch = !search || (m.name || '').toLowerCase().includes(search.toLowerCase());
+    return matchMode && matchSearch;
+  }), [maps, modeF, search]);
+
+  const activeMaps  = filtered.filter(m => eventById.has(String(m.id)));
+  const restMaps    = filtered.filter(m => !eventById.has(String(m.id)));
 
   return (
     <Layout>
-      <Topbar title="Mapas" actions={<button className="btn btn-sm btn-secondary">Rotación actual</button>} />
-      <div className="page">
+      <Topbar title="Mapas" />
+      <div style={{ padding: '1.5rem', flex: 1, overflowY: 'auto' }}>
+        {error && (
+          <div style={{ background: 'rgba(239,68,68,0.12)', border: '1px solid #ef4444', borderRadius: '8px', padding: '0.75rem 1rem', marginBottom: '1rem', color: '#ef4444' }}>
+            {error}
+          </div>
+        )}
 
-        <div className="card mb-6">
-          <div className="flex gap-2 flex-wrap">
+        {/* Controles */}
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <input
+              className="form-input"
+              placeholder="Buscar mapa..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ flex: 1, minWidth: '200px' }}
+            />
+            <span style={{ color: 'var(--text-2)', fontSize: '0.9em', whiteSpace: 'nowrap' }}>
+              {filtered.length} mapas
+            </span>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', alignItems: 'center' }}>
             {modes.map(m => (
-              <button key={m} className={`btn btn-sm ${mode === m ? 'btn-primary' : 'btn-secondary'}`} onClick={() => setMode(m)}>{m}</button>
+              <button
+                key={m}
+                className={'btn btn-sm' + (modeF === m ? ' btn-primary' : '')}
+                style={modeF !== m ? { background: 'transparent', border: '1px solid var(--border)', color: 'var(--text-2)' } : {}}
+                onClick={() => setModeF(m)}
+              >
+                {m === 'all' ? 'Todos' : m}
+              </button>
             ))}
           </div>
         </div>
 
-        <div className="grid cols-4" style={{ gap: 'var(--s4)' }}>
-          {filtered.map(map => (
-            <div key={map.name} className="card" style={{ cursor: 'pointer' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--blue-border)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-            >
-              {/* Minimap placeholder */}
-              <div style={{ height: 100, background: 'var(--bg-base)', borderRadius: 'var(--r-md)', marginBottom: 'var(--s3)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border)', color: 'var(--text-3)', fontSize: 28 }}>
-                ▦
+        {loading ? (
+          <div style={{ display: 'flex', justifyContent: 'center', padding: '3rem' }}>
+            <div className="loading-spinner" />
+          </div>
+        ) : maps.length === 0 ? (
+          <div className="card" style={{ textAlign: 'center', padding: '4rem 2rem' }}>
+            <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🗺️</div>
+            <h3 style={{ color: 'var(--text-1)', marginBottom: '0.5rem' }}>Sin mapas disponibles</h3>
+            <p style={{ color: 'var(--text-2)' }}>No se han podido cargar los mapas en este momento.</p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <p style={{ color: 'var(--text-2)', textAlign: 'center', padding: '2rem' }}>
+            No se encontraron mapas con esos filtros.
+          </p>
+        ) : (
+          <>
+            {/* Sección: En rotación ahora */}
+            {activeMaps.length > 0 && (
+              <div style={{ marginBottom: '2rem' }}>
+                <SectionHeader label="En rotación ahora" count={activeMaps.length} />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px,1fr))', gap: '1rem' }}>
+                  {activeMaps.map(m => (
+                    <MapCard key={m.id} m={m} event={eventById.get(String(m.id))} />
+                  ))}
+                </div>
               </div>
-              <div style={{ fontWeight: 600, fontSize: 13 }}>{map.name}</div>
-              <span className="badge badge-info mt-2">{map.mode}</span>
-              <div className="stat-row mt-3"><span className="stat-row-label">Entorno</span><span className="stat-row-value t-xs">{map.env}</span></div>
-              <div className="stat-row"><span className="stat-row-label">Tamaño</span><span className="stat-row-value t-xs">{map.size}</span></div>
-              <div className="stat-row"><span className="stat-row-label">Mejores</span><span className="stat-row-value t-xs text-success">{map.best}</span></div>
-            </div>
-          ))}
-        </div>
+            )}
 
-      </div>
-    </Layout>
-  );
-}
-
-const TUTORIALS = [
-  { id:1, title:'Cómo usar Leon en Gem Grab', author:'ProBS',    views:'12.4K', duration:'8:32', level:'Avanzado',    tag:'Leon'    },
-  { id:2, title:'Guía completa de Sandy',     author:'SandyPro', views:'9.1K',  duration:'12:15',level:'Intermedio',  tag:'Sandy'   },
-  { id:3, title:'Meta actual Season 32',      author:'MetaGuru', views:'34.2K', duration:'18:40',level:'General',     tag:'Meta'    },
-  { id:4, title:'Técnica de super de Spike',  author:'SpikeMX',  views:'7.8K',  duration:'5:20', level:'Avanzado',    tag:'Spike'   },
-  { id:5, title:'Brawl Ball: estrategias',    author:'BB_King',  views:'21.3K', duration:'15:00',level:'Intermedio',  tag:'Modo'    },
-  { id:6, title:'Cómo subir trofeos rápido',  author:'TroTrofer',views:'45.6K', duration:'22:10',level:'Principiante',tag:'Trofeos' },
-];
-
-export function Tutoriales() {
-  const [search, setSearch] = useState('');
-  const filtered = TUTORIALS.filter(t => t.title.toLowerCase().includes(search.toLowerCase()) || t.tag.toLowerCase().includes(search.toLowerCase()));
-
-  return (
-    <Layout>
-      <Topbar title="Tutoriales" actions={<button className="btn btn-sm btn-primary">+ Subir tutorial</button>} />
-      <div className="page">
-
-        <div className="card mb-6">
-          <input className="form-input" style={{ maxWidth: 320 }} placeholder="Buscar tutorial..." value={search} onChange={e => setSearch(e.target.value)} />
-        </div>
-
-        <div className="grid cols-3" style={{ gap: 'var(--s4)' }}>
-          {filtered.map(t => (
-            <div key={t.id} className="card" style={{ cursor: 'pointer' }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--blue-border)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; }}
-            >
-              {/* Thumbnail placeholder */}
-              <div style={{ height: 120, background: 'var(--bg-base)', borderRadius: 'var(--r-md)', marginBottom: 'var(--s3)', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '1px solid var(--border)', color: 'var(--text-3)', fontSize: 32 }}>▶</div>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 'var(--s2)' }}>{t.title}</div>
-              <div className="flex items-center gap-2 mb-3">
-                <span className="badge badge-info">{t.tag}</span>
-                <span className="badge" style={{ background: 'var(--bg-elevated)', color: 'var(--text-2)', fontSize: 9 }}>{t.level}</span>
+            {/* Sección: Resto de mapas */}
+            {restMaps.length > 0 && (
+              <div>
+                <SectionHeader
+                  label={activeMaps.length > 0 ? 'Resto de mapas' : 'Todos los mapas'}
+                  count={restMaps.length}
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(220px,1fr))', gap: '1rem' }}>
+                  {restMaps.map(m => (
+                    <MapCard key={m.id} m={m} event={null} />
+                  ))}
+                </div>
               </div>
-              <div className="stat-row"><span className="stat-row-label">Autor</span><span className="stat-row-value t-xs">{t.author}</span></div>
-              <div className="stat-row"><span className="stat-row-label">Vistas</span><span className="stat-row-value t-xs">{t.views}</span></div>
-              <div className="stat-row"><span className="stat-row-label">Duración</span><span className="stat-row-value t-xs">{t.duration}</span></div>
-              <button className="btn btn-sm btn-primary mt-3 w-full">Ver tutorial</button>
-            </div>
-          ))}
-        </div>
-
+            )}
+          </>
+        )}
       </div>
     </Layout>
   );
 }
-
-const REPORTS = [
-  { id:1, name:'Informe Mayo 2026',      date:'12/05/2026', type:'Jugador',  size:'248 KB', status:'Listo'   },
-  { id:2, name:'Informe Abril 2026',     date:'30/04/2026', type:'Jugador',  size:'312 KB', status:'Listo'   },
-  { id:3, name:'Análisis Meta S32',      date:'28/04/2026', type:'Meta',     size:'1.2 MB', status:'Listo'   },
-  { id:4, name:'Reporte Club Speed Force',date:'20/04/2026',type:'Club',     size:'540 KB', status:'Listo'   },
-  { id:5, name:'Informe Marzo 2026',     date:'31/03/2026', type:'Jugador',  size:'290 KB', status:'Listo'   },
-];
-
-export function Reportes() {
-  const [generating, setGenerating] = useState(false);
-
-  function generar() {
-    setGenerating(true);
-    setTimeout(() => setGenerating(false), 2000);
-  }
-
-  return (
-    <Layout>
-      <Topbar
-        title="Reportes PDF"
-        actions={
-          <div className="flex gap-2">
-            <button className="btn btn-sm btn-secondary">Historial</button>
-            <button className="btn btn-sm btn-primary" onClick={generar} disabled={generating}>
-              {generating ? 'Generando...' : '+ Nuevo reporte'}
-            </button>
-          </div>
-        }
-      />
-      <div className="page">
-
-        {generating && <div className="alert alert-info mb-6">⏳ Generando reporte… esto puede tardar unos segundos.</div>}
-
-        {/* Config nuevo reporte */}
-        <div className="card mb-6">
-          <div className="card-header"><span className="card-title">Configurar nuevo reporte</span></div>
-          <div className="grid cols-3" style={{ gap: 'var(--s4)' }}>
-            <div className="form-group">
-              <label className="form-label">Tipo de reporte</label>
-              <select className="form-select">
-                <option>Reporte de jugador</option>
-                <option>Análisis de meta</option>
-                <option>Reporte de club</option>
-                <option>Comparativa de brawlers</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Período</label>
-              <select className="form-select">
-                <option>Últimos 7 días</option>
-                <option>Últimos 30 días</option>
-                <option>Últimos 90 días</option>
-                <option>Temporada actual</option>
-              </select>
-            </div>
-            <div className="form-group">
-              <label className="form-label">Formato</label>
-              <select className="form-select">
-                <option>PDF</option>
-                <option>CSV</option>
-              </select>
-            </div>
-          </div>
-          <button className="btn btn-primary" onClick={generar} disabled={generating}>
-            {generating ? 'Generando...' : 'Generar reporte'}
-          </button>
-        </div>
-
-        {/* Lista de reportes */}
-        <div className="card">
-          <div className="card-header"><span className="card-title">Reportes generados</span></div>
-          <div className="table-wrap">
-            <table className="table">
-              <thead>
-                <tr><th>Nombre</th><th>Fecha</th><th>Tipo</th><th>Tamaño</th><th>Estado</th><th>Acciones</th></tr>
-              </thead>
-              <tbody>
-                {REPORTS.map(r => (
-                  <tr key={r.id}>
-                    <td className="table-name">◎ {r.name}</td>
-                    <td className="t-sm text-2" style={{ fontFamily: 'var(--font-mono)' }}>{r.date}</td>
-                    <td><span className="badge badge-info">{r.type}</span></td>
-                    <td className="t-sm text-2">{r.size}</td>
-                    <td><span className="badge badge-win">{r.status}</span></td>
-                    <td>
-                      <div className="flex gap-2">
-                        <button className="btn btn-sm btn-primary">Descargar</button>
-                        <button className="btn btn-sm btn-secondary">Eliminar</button>
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-    </Layout>
-  );
-}
-
-export default Mapas;
