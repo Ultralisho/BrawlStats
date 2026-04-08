@@ -1,98 +1,155 @@
-import React, { useState } from 'react';
+﻿import { useState, useEffect } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import Layout from '../components/Layout';
+import fetchApi from '../services/api';
 import Topbar from '../components/Topbar';
 
-const ALL_BRAWLERS = [
-  { name:'Leon',    rarity:'legendary', role:'Assassin', wr:'74%', trophies:1840, owned:true  },
-  { name:'Sandy',   rarity:'legendary', role:'Controller', wr:'69%', trophies:1720, owned:true  },
-  { name:'Spike',   rarity:'legendary', role:'Controller', wr:'61%', trophies:1680, owned:true  },
-  { name:'Amber',   rarity:'legendary', role:'Controller', wr:'66%', trophies:1520, owned:true  },
-  { name:'Crow',    rarity:'legendary', role:'Assassin',   wr:'63%', trophies:1480, owned:true  },
-  { name:'Meg',     rarity:'legendary', role:'Tank',       wr:'58%', trophies:1200, owned:true  },
-  { name:'Fang',    rarity:'mythic',    role:'Assassin',   wr:'67%', trophies:1350, owned:true  },
-  { name:'Gray',    rarity:'mythic',    role:'Support',    wr:'55%', trophies:980,  owned:true  },
-  { name:'Mortis',  rarity:'mythic',    role:'Assassin',   wr:'52%', trophies:1100, owned:true  },
-  { name:'Tara',    rarity:'mythic',    role:'Support',    wr:'60%', trophies:1050, owned:true  },
-  { name:'Gene',    rarity:'mythic',    role:'Support',    wr:'57%', trophies:990,  owned:true  },
-  { name:'Buzz',    rarity:'mythic',    role:'Tank',       wr:'53%', trophies:920,  owned:true  },
-  { name:'Piper',   rarity:'epic',      role:'Sharpshooter', wr:'56%', trophies:860, owned:false },
-  { name:'Frank',   rarity:'epic',      role:'Tank',       wr:'50%', trophies:780,  owned:false },
-  { name:'Bibi',    rarity:'epic',      role:'Tank',       wr:'51%', trophies:700,  owned:false },
-  { name:'Shelly',  rarity:'common',    role:'Fighter',    wr:'45%', trophies:620,  owned:true  },
-  { name:'Colt',    rarity:'common',    role:'Sharpshooter', wr:'44%', trophies:580, owned:true },
-  { name:'Bull',    rarity:'common',    role:'Tank',       wr:'46%', trophies:540,  owned:true  },
-];
+const RARITY_COLORS = {
+  common:     '#9ca3af',
+  rare:       '#22c55e',
+  super_rare: '#3b82f6',
+  epic:       '#a855f7',
+  mythic:     '#f97316',
+  legendary:  '#FACC15',
+};
 
-const RARITIES = ['Todas','legendary','mythic','epic','super-rare','rare','common'];
-const ROLES    = ['Todos','Assassin','Controller','Tank','Support','Sharpshooter','Fighter'];
+function BrawlerImg({ id, name, color, size = 80 }) {
+  const [failed, setFailed] = useState(false);
+  const fallback = (
+    <div style={{
+      width: size, height: size, borderRadius: 12, margin: '0 auto 8px',
+      display: 'flex', alignItems: 'center', justifyContent: 'center',
+      background: color + '22', border: '1px solid ' + color + '55',
+      color, fontSize: '1.6rem', fontWeight: 800,
+      fontFamily: 'var(--font-display)',
+    }}>
+      {name?.[0] ?? '?'}
+    </div>
+  );
+  if (failed || id == null) return fallback;
+  return (
+    <img
+      src={`https://cdn.brawlify.com/brawlers/borders/${id}.png`}
+      alt={name}
+      width={size}
+      height={size}
+      loading="lazy"
+      onError={() => setFailed(true)}
+      style={{ width: size, height: size, objectFit: 'contain', display: 'block', margin: '0 auto 8px' }}
+    />
+  );
+}
 
 export default function Brawlers() {
-  const [rarity, setRarity] = useState('Todas');
-  const [role,   setRole]   = useState('Todos');
-  const [search, setSearch] = useState('');
-  const [onlyOwned, setOnlyOwned] = useState(false);
+  const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const [brawlers,  setBrawlers]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState(null);
+  const [search,    setSearch]    = useState(searchParams.get('search') || '');
+  const [rarityF,   setRarityF]   = useState('all');
+  const [roleF,     setRoleF]     = useState('all');
 
-  const filtered = ALL_BRAWLERS.filter(b => {
-    if (rarity !== 'Todas' && b.rarity !== rarity) return false;
-    if (role   !== 'Todos' && b.role   !== role)   return false;
-    if (onlyOwned && !b.owned) return false;
-    if (search && !b.name.toLowerCase().includes(search.toLowerCase())) return false;
-    return true;
+  useEffect(() => {
+    fetchApi('/brawlers')
+      .then(data => setBrawlers(Array.isArray(data) ? data : []))
+      .catch(err => setError(err.message))
+      .finally(() => setLoading(false));
+  }, []);
+
+  const rarities = ['all', ...new Set(brawlers.map(b => b.rarity).filter(Boolean))];
+  const roles    = ['all', ...new Set(brawlers.map(b => b.role).filter(Boolean))];
+
+  const filtered = brawlers.filter(b => {
+    const matchSearch = !search || b.name.toLowerCase().includes(search.toLowerCase());
+    const matchRarity = rarityF === 'all' || b.rarity === rarityF;
+    const matchRole   = roleF   === 'all' || b.role   === roleF;
+    return matchSearch && matchRarity && matchRole;
   });
 
   return (
     <Layout>
-      <Topbar
-        title="Brawlers"
-        actions={
-          <div className="flex gap-2">
-            <span className="t-sm text-3" style={{ padding: '6px 0' }}>{filtered.length} brawlers</span>
+      <Topbar title="Brawlers" />
+      <div style={{ padding:'1.5rem', flex:1, overflowY:'auto' }}>
+        {error && (
+          <div style={{ background:'rgba(239,68,68,0.12)', border:'1px solid #ef4444', borderRadius:'8px', padding:'0.75rem 1rem', marginBottom:'1rem', color:'#ef4444' }}>
+            {error}
           </div>
-        }
-      />
-      <div className="page">
+        )}
 
-        {/* Filtros */}
-        <div className="card mb-6">
-          <div className="flex flex-wrap gap-3 items-center">
-            <input className="form-input" style={{ maxWidth: 200 }} placeholder="Buscar brawler..." value={search} onChange={e => setSearch(e.target.value)} />
-            <select className="form-select" style={{ width: 'auto', padding: '8px 14px' }} value={rarity} onChange={e => setRarity(e.target.value)}>
-              {RARITIES.map(r => <option key={r}>{r}</option>)}
+        <div className="card" style={{ marginBottom:'1.5rem' }}>
+          <div style={{ display:'flex', gap:'0.75rem', flexWrap:'wrap', alignItems:'center' }}>
+            <input
+              className="form-input"
+              placeholder="Buscar brawler..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              style={{ flex:1, minWidth:'180px' }}
+            />
+            <select className="form-input" value={rarityF} onChange={e => setRarityF(e.target.value)} style={{ minWidth:'140px' }}>
+              {rarities.map(r => (
+                <option key={r} value={r}>{r === 'all' ? 'Todas las rarezas' : r.replace(/_/g, ' ')}</option>
+              ))}
             </select>
-            <select className="form-select" style={{ width: 'auto', padding: '8px 14px' }} value={role} onChange={e => setRole(e.target.value)}>
-              {ROLES.map(r => <option key={r}>{r}</option>)}
+            <select className="form-input" value={roleF} onChange={e => setRoleF(e.target.value)} style={{ minWidth:'140px' }}>
+              {roles.map(r => (
+                <option key={r} value={r}>{r === 'all' ? 'Todos los roles' : r}</option>
+              ))}
             </select>
-            <label className="flex items-center gap-2 t-sm" style={{ cursor: 'pointer' }}>
-              <input type="checkbox" checked={onlyOwned} onChange={e => setOnlyOwned(e.target.checked)} />
-              Solo los míos
-            </label>
+            <span style={{ color:'var(--color-text-muted)', fontSize:'0.9em', whiteSpace:'nowrap' }}>
+              {filtered.length} brawlers
+            </span>
           </div>
         </div>
 
-        {/* Grid de brawlers */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(150px, 1fr))', gap: 'var(--s4)' }}>
-          {filtered.map(b => (
-            <div key={b.name} className="card" style={{
-              textAlign: 'center', cursor: 'pointer', opacity: b.owned ? 1 : 0.5,
-              transition: 'var(--transition)',
-            }}
-              onMouseEnter={e => { e.currentTarget.style.borderColor = 'var(--blue-border)'; e.currentTarget.style.transform = 'translateY(-2px)'; }}
-              onMouseLeave={e => { e.currentTarget.style.borderColor = 'var(--border)'; e.currentTarget.style.transform = ''; }}
-            >
-              {/* Avatar placeholder */}
-              <div style={{ width: 64, height: 64, borderRadius: 'var(--r-lg)', background: 'var(--bg-elevated)', border: '2px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto var(--s3)', fontFamily: 'var(--font-display)', fontSize: 22, fontWeight: 800, color: 'var(--text-3)' }}>
-                {b.name[0]}
-              </div>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 4 }}>{b.name}</div>
-              <span className={`badge badge-${b.rarity}`} style={{ fontSize: 9 }}>{b.rarity}</span>
-              <div className="t-xs text-3 mt-2">{b.role}</div>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 12, color: 'var(--success)', marginTop: 4 }}>WR {b.wr}</div>
-              {!b.owned && <div className="t-xs text-3 mt-2" style={{ color: 'var(--warning)' }}>No desbloqueado</div>}
-            </div>
-          ))}
-        </div>
-
+        {loading ? (
+          <p style={{ color:'var(--color-text-muted)', textAlign:'center', padding:'3rem' }}>Cargando brawlers...</p>
+        ) : brawlers.length === 0 ? (
+          <div className="card" style={{ textAlign:'center', padding:'4rem 2rem' }}>
+            <div style={{ fontSize:'3rem', marginBottom:'1rem' }}>🎮</div>
+            <h3 style={{ color:'var(--color-text)', marginBottom:'0.5rem' }}>Sin brawlers en la base de datos</h3>
+            <p style={{ color:'var(--color-text-muted)' }}>
+              Un administrador debe sincronizar los brawlers desde la API de Brawl Stars.
+            </p>
+          </div>
+        ) : filtered.length === 0 ? (
+          <p style={{ color:'var(--color-text-muted)', textAlign:'center', padding:'2rem' }}>
+            No se encontraron brawlers con esos filtros.
+          </p>
+        ) : (
+          <div className="brawler-grid">
+            {filtered.map(b => {
+              const color = RARITY_COLORS[b.rarity] || '#9ca3af';
+              return (
+                <div
+                  key={b.id}
+                  className="brawler-card"
+                  style={{ borderTop:'2px solid ' + color, cursor:'pointer' }}
+                  onClick={() => navigate('/brawlers/' + b.id)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={e => e.key === 'Enter' && navigate('/brawlers/' + b.id)}
+                >
+                  <BrawlerImg id={b.id} name={b.name} color={color} />
+                  <div className="brawler-name">{b.name}</div>
+                  <div style={{ marginTop:'6px', display:'flex', gap:'4px', flexWrap:'wrap' }}>
+                    <span style={{ background: color + '22', color, borderRadius:'4px', padding:'2px 6px', fontSize:'0.72em', fontWeight:600 }}>
+                      {b.rarity ? b.rarity.replace(/_/g,' ') : '-'}
+                    </span>
+                    {b.role && (
+                      <span style={{ background:'rgba(255,255,255,0.07)', color:'var(--color-text-muted)', borderRadius:'4px', padding:'2px 6px', fontSize:'0.72em' }}>
+                        {b.role}
+                      </span>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </Layout>
   );
 }
+
+
