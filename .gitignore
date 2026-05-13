@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Env files
+.env
+brawlstats-backend/.env
+
+# React build
+brawlstats-react/build/
+
+# PDFs generados
+brawlstats-backend/uploads/reports/*.pdf
+
+# Logs
+*.log
