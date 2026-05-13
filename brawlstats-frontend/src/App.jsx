@@ -1,5 +1,6 @@
 ﻿import React, { createContext, useContext, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import Home        from './pages/Home';
 import Login        from './pages/Login';
 import Register     from './pages/Register';
 import Dashboard    from './pages/Dashboard';
@@ -41,6 +42,7 @@ export default function App() {
     <AuthContext.Provider value={{ user, login, logout, getToken }}>
       <BrowserRouter>
         <Routes>
+          <Route path="/home"         element={<Home />} />
           <Route path="/login"         element={<Login />} />
           <Route path="/register"      element={<Register />} />
           <Route path="/"              element={<PrivateRoute><Dashboard /></PrivateRoute>} />
