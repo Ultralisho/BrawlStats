@@ -16,11 +16,13 @@ async function fetchApi(endpoint, options = {}) {
   const response = await fetch(`${BASE_URL}${endpoint}`, { ...options, headers, body });
 
   if (!response.ok) {
-    const data = await response.json().catch(() => ({}));
-    throw new Error(data.error || `HTTP ${response.status}`);
+    const json = await response.json().catch(() => ({}));
+    throw new Error(json.error || `HTTP ${response.status}`);
   }
 
-  return response.json();
+  const json = await response.json();
+  // Desempaqueta el envelope { success: true, data: ... } del backend
+  return (json && json.success === true && 'data' in json) ? json.data : json;
 }
 
 export { fetchApi };
