@@ -1,26 +1,36 @@
 const supercell = require('../services/supercell.service');
 const { Player } = require('../models');
 const { ok }     = require('../utils/apiResponse');
-const { Op }     = require('sequelize');
 
-// GET /api/v1/leaderboard/global
 async function global(req, res, next) {
   try {
     const data = await supercell.getRanking('global');
     return ok(res, data);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.response?.status === 403)
+      return ok(res, [], { warning: 'API de Brawl Stars no disponible: token inválido o IP no autorizada' });
+    if (err.response?.status === 404)
+      return ok(res, []);
+    next(err);
+  }
 }
 
-// GET /api/v1/leaderboard/country/:code  ej: ES
 async function byCountry(req, res, next) {
   try {
-    const data = await supercell.getRanking(req.params.code);
+    const { code } = req.params;
+    if (!/^[A-Za-z]{2}$/.test(code))
+      return ok(res, [], { warning: 'Código de país inválido. Usa formato ISO 2 letras (ej: ES, US)' });
+    const data = await supercell.getRanking(code.toUpperCase());
     return ok(res, data);
-  } catch (err) { next(err); }
+  } catch (err) {
+    if (err.response?.status === 403)
+      return ok(res, [], { warning: 'API de Brawl Stars no disponible: token inválido o IP no autorizada' });
+    if (err.response?.status === 404)
+      return ok(res, [], { warning: `No hay ranking disponible para ese país` });
+    next(err);
+  }
 }
 
-// GET /api/v1/leaderboard/local
-// Ranking de jugadores registrados en BrawlStats, ordenado por trofeos
 async function local(req, res, next) {
   try {
     const players = await Player.findAll({
