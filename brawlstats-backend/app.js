@@ -9,6 +9,7 @@ const reportRoutes     = require('./routes/report.routes');
 const leaderboardRoutes= require('./routes/leaderboard.routes');
 const eventsRoutes     = require('./routes/events.routes');
 const brawlapiRoutes   = require('./routes/brawlapi.routes');
+const tutorialRoutes   = require('./routes/tutorial.routes');
 
 const { errorHandler } = require('./middlewares/error.middleware');
 
@@ -36,6 +37,7 @@ app.use('/api/v1/reports',     reportRoutes);
 app.use('/api/v1/leaderboard', leaderboardRoutes);
 app.use('/api/v1/events',      eventsRoutes);
 app.use('/api/brawlapi',       brawlapiRoutes);
+app.use('/api/v1/tutorials',   tutorialRoutes);
 
 // ── 404 ─────────────────────────────────────────────────────────────────────
 app.use((_req, res) => {

@@ -27,6 +27,11 @@ async function create(req, res, next) {
   try {
     const { name, type, period, params } = req.body;
 
+    const count = await Report.count({ where: { userId: req.user.id } });
+    if (count >= 5) {
+      return res.status(403).json({ success: false, error: 'Has alcanzado el límite de 5 reportes por cuenta.' });
+    }
+
     const report = await Report.create({
       userId: req.user.id,
       name,
@@ -246,9 +251,6 @@ function buildPdf(filepath, { name, type, period, player, battles, accBattles })
     sectionTitle('Jugador');
 
     const raw  = player.rawData || {};
-    const v3   = (raw['3vs3Victories'] || 0).toLocaleString('es-ES');
-    const vSol = (raw.soloVictories   || 0).toLocaleString('es-ES');
-    const vDuo = (raw.duoVictories    || 0).toLocaleString('es-ES');
 
     // 4 stat boxes
     const BOXES = [
@@ -271,8 +273,8 @@ function buildPdf(filepath, { name, type, period, player, battles, accBattles })
     });
     doc.y = y0 + BH + 10;
 
-    doc.font('Helvetica').fontSize(10).fillColor(C.t2)
-       .text(`Victorias 3v3: ${v3}   ·   Solo: ${vSol}   ·   Dúo: ${vDuo}   ·   Última sync: ${player.lastSync ? new Date(player.lastSync).toLocaleDateString('es-ES') : '—'}`, ML, doc.y, { width: CW });
+    doc.font('Helvetica').fontSize(9).fillColor(C.t2)
+       .text(`Última sync: ${player.lastSync ? new Date(player.lastSync).toLocaleDateString('es-ES') : '—'}`, ML, doc.y, { width: CW });
     doc.moveDown(1.4);
 
     // ════════════════════════════════════════════════════════════════════════

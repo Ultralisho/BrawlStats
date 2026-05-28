@@ -9,6 +9,8 @@ async function start() {
     await sequelize.authenticate();
     console.log('✅ MySQL conectado');
 
+    // Sync no destructivo. Para aplicar cambios de esquema, usar `npm run seed`
+    // (que dropea+recrea las tablas que han cambiado).
     await sequelize.sync();
     console.log('✅ Tablas sincronizadas');
 

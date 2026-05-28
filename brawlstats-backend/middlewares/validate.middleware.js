@@ -1,12 +1,13 @@
 const { validationResult } = require('express-validator');
 
-// Usa este middleware después de los arrays de validación de express-validator
 function validate(req, res, next) {
   const errors = validationResult(req);
   if (!errors.isEmpty()) {
+    const list = errors.array();
     return res.status(400).json({
-      error: 'Datos no válidos',
-      details: errors.array().map(e => `${e.path}: ${e.msg}`),
+      success: false,
+      error:   list[0].msg,           // primer error legible para el frontend
+      details: list.map(e => ({ field: e.path, msg: e.msg })),
     });
   }
   next();

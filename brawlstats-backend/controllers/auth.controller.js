@@ -16,7 +16,7 @@ async function register(req, res, next) {
     const token = generateToken(user.id, user.role);
     return created(res, {
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, country: user.country },
     });
   } catch (err) { next(err); }
 }
@@ -32,7 +32,7 @@ async function login(req, res, next) {
     const token = generateToken(user.id, user.role);
     return ok(res, {
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: { id: user.id, name: user.name, email: user.email, role: user.role, country: user.country },
     });
   } catch (err) { next(err); }
 }

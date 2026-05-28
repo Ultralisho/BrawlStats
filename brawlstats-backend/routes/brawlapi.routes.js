@@ -51,9 +51,10 @@ async function proxy(path, res) {
   }
 }
 
-router.get('/events',   (_req, res) => proxy('/events',   res));
-router.get('/brawlers', (_req, res) => proxy('/brawlers', res));
-router.get('/maps',     (_req, res) => proxy('/maps',     res));
+router.get('/events',       (_req, res) => proxy('/events',   res));
+router.get('/brawlers',     (_req, res) => proxy('/brawlers', res));
+router.get('/brawlers/:id', (req,  res) => proxy('/brawlers/' + req.params.id, res));
+router.get('/maps',         (_req, res) => proxy('/maps',     res));
 // Detalle de mapa: ya hay un proxy equivalente en /api/v1/brawlers/maps/:id
 // que es el que consume el frontend (REACT_APP_API_URL=/api/v1). No duplicamos
 // aqui para evitar tener dos endpoints identicos.
