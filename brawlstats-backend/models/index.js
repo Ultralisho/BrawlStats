@@ -5,8 +5,10 @@ const Player          = require('./player.model');
 const Brawler         = require('./brawler.model');
 const Stat            = require('./stat.model');
 const Report          = require('./report.model');
+const Tutorial        = require('./tutorial.model');
 const Battle          = require('./battle.model');
 const PlayerSnapshot  = require('./playerSnapshot.model');
+const DatasetBattle   = require('./datasetBattle.model');
 
 // ── Asociaciones ────────────────────────────────────────────────────────────
 // Un usuario puede tener varios jugadores vinculados
@@ -33,4 +35,4 @@ Battle.belongsTo(Player,{ foreignKey: 'playerId', as: 'player'  });
 Player.hasMany(PlayerSnapshot,  { foreignKey: 'playerId', as: 'snapshots' });
 PlayerSnapshot.belongsTo(Player,{ foreignKey: 'playerId', as: 'player'    });
 
-module.exports = { sequelize, User, Player, Brawler, Stat, Report, Battle, PlayerSnapshot };
+module.exports = { sequelize, User, Player, Brawler, Stat, Report, Tutorial, Battle, PlayerSnapshot, DatasetBattle };
