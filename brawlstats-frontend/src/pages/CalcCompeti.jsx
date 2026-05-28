@@ -243,24 +243,60 @@ export default function CalcCompeti() {
     return hints;
   }, [selectedBrawlers, myPickComplete]);
 
-  // Recomendaciones según fase
+  // Recomendaciones según fase.
+  // Si no hay datos de win rate (sin partidas registradas) igualmente sugerimos
+  // brawlers del catálogo para que el draft nunca quede vacío.
   const recommendations = useMemo(() => {
-    const available = [...activeWinrates].filter(w => w.winRate != null && !usedIds.has(Number(w.id)));
+    const notUsed = (w) => !usedIds.has(Number(w.id));
+    const withWr  = activeWinrates.filter(w => w.winRate != null && notUsed(w));
+    const pool    = withWr.length ? withWr : activeWinrates.filter(notUsed);
+    const byWr    = (a, b) => (b.winRate ?? -1) - (a.winRate ?? -1);
 
-    if (phase === 'bans') {
-      // Sugerir banear los brawlers con mayor WR (más peligrosos para el rival)
-      return available.sort((a, b) => b.winRate - a.winRate).slice(0, 8);
-    }
-
-    if (phase === 'picks') {
-      if (!currentPickStep) return [];
+    if (phase === 'picks' && currentPickStep) {
       const isMyTurn = currentPickStep.team === myTeam;
       if (!isMyTurn && !showEnemyView) return [];
-      return available.sort((a, b) => b.winRate - a.winRate).slice(0, 8);
+    }
+    return [...pool].sort(byWr).slice(0, 8);
+  }, [phase, activeWinrates, usedIds, currentPickStep, myTeam, showEnemyView]);
+
+  // Análisis competitivo estimado (T5): siempre disponible cuando el equipo
+  // está completo, aunque no haya datos de win rate. Combina cobertura de
+  // roles + sinergias, y mezcla el win rate real cuando existe.
+  const estimatedAnalysis = useMemo(() => {
+    if (!myPickComplete) return null;
+    const roles       = selectedBrawlers.map(b => b?.role).filter(Boolean);
+    const uniqueRoles = new Set(roles).size;
+
+    let rating = 50;
+    const factors = [];
+
+    if (uniqueRoles >= 3)       { rating += 14; factors.push({ kind:'good', text:'Roles variados (3 distintos) — buena cobertura' }); }
+    else if (uniqueRoles === 2) { rating += 4;  factors.push({ kind:'ok',   text:'2 roles distintos — cobertura aceptable' }); }
+    else if (uniqueRoles === 1) { rating -= 12; factors.push({ kind:'bad',  text:'Mono-rol — composición predecible' }); }
+
+    const good = synergyHints.filter(h => h.kind === 'good').length;
+    const risk = synergyHints.filter(h => h.kind !== 'good').length;
+    if (good) { rating += Math.min(12, good * 6); factors.push({ kind:'good', text:`${good} sinergia${good > 1 ? 's' : ''} de equipo detectada${good > 1 ? 's' : ''}` }); }
+    if (risk) { rating -= Math.min(8,  risk * 4); factors.push({ kind:'ok',   text:`${risk} posible riesgo de composición` }); }
+
+    const wrs = myPicks.map(id => activeById(id)?.winRate).filter(r => r != null);
+    let confidence = 'estimada';
+    if (wrs.length) {
+      const avg = wrs.reduce((s, r) => s + r, 0) / wrs.length;
+      rating = Math.round(rating * 0.4 + avg * 0.6);   // mezcla heurística + datos reales
+      confidence = wrs.length >= 3 ? 'con datos reales' : 'datos + estimación';
+      factors.push({ kind: avg >= 50 ? 'good' : 'ok', text:`Win rate medio ${Math.round(avg)}% (${wrs.length}/3 con datos)` });
+    } else {
+      factors.push({ kind:'ok', text:'Sin partidas registradas — basado en roles y sinergias' });
     }
 
-    return available.sort((a, b) => b.winRate - a.winRate).slice(0, 8);
-  }, [phase, activeWinrates, usedIds, currentPickStep, myTeam, showEnemyView]);
+    rating = Math.max(0, Math.min(100, Math.round(rating)));
+    const label =
+      rating >= 65 ? 'COMPOSICIÓN FUERTE' :
+      rating >= 50 ? 'COMPOSICIÓN VIABLE' :
+      rating >= 40 ? 'COMPOSICIÓN MEJORABLE' : 'COMPOSICIÓN DÉBIL';
+    return { rating, label, factors, confidence };
+  }, [myPickComplete, selectedBrawlers, synergyHints, myPicks, activeWinrates]);
 
   // Picker list
   const pickerList = useMemo(() => {
@@ -367,13 +403,14 @@ export default function CalcCompeti() {
   };
 
   const handleSave = () => {
-    if (!myPickComplete || score == null) return;
+    if (!myPickComplete) return;
+    const finalScore = score != null ? score : (estimatedAnalysis?.rating ?? null);
     const def  = myPicks.map(id => brawlerById(id)?.name || '?').join(' + ') + ' · ' + mode + (selectedMapName ? ' · ' + selectedMapName : '');
     const name = window.prompt('Nombre para esta composición:', def);
     if (!name) return;
     const next = [{
       id: Date.now(), name, mode, mapId, mapName: selectedMapName,
-      brawlerIds: [...myPicks], score, savedAt: new Date().toISOString(),
+      brawlerIds: [...myPicks], score: finalScore, savedAt: new Date().toISOString(),
     }, ...savedComps].slice(0, 30);
     persistComps(next);
   };
@@ -656,12 +693,12 @@ export default function CalcCompeti() {
                     className={'cc-draft-rec' + (phase === 'bans' ? ' is-ban' : '')}
                     onClick={() => handleSelect(b.id)}
                     disabled={draftComplete}
-                    title={`${b.name} — ${b.winRate}% WR`}>
+                    title={`${b.name}${b.winRate != null ? ' — ' + b.winRate + '% WR' : ''}`}>
                     <img src={brawlerImg(b.id)} alt={b.name}
                       onError={e => { e.currentTarget.style.display = 'none'; }} />
                     <div className="cc-draft-rec-name">{b.name}</div>
                     <div className="cc-draft-rec-wr" style={{ color: wrColor(b.winRate) }}>
-                      {b.winRate}%
+                      {b.winRate != null ? b.winRate + '%' : '—'}
                     </div>
                   </button>
                 ))}
@@ -795,8 +832,34 @@ export default function CalcCompeti() {
                   </div>
                 ))}
 
+                {estimatedAnalysis && (
+                  <div style={{ marginTop: 'var(--s4)', paddingTop: 'var(--s4)', borderTop: '1px solid var(--border)' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 'var(--s2)' }}>
+                      <span className="card-title" style={{ fontSize: 13 }}>Análisis competitivo estimado</span>
+                      <span style={{ fontSize: 10, color: 'var(--text-3)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>
+                        {estimatedAnalysis.confidence}
+                      </span>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 8 }}>
+                      <span style={{ fontSize: 30, fontWeight: 800, fontFamily: 'var(--font-mono)', color: scoreColor(estimatedAnalysis.rating) }}>
+                        {estimatedAnalysis.rating}
+                      </span>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: scoreColor(estimatedAnalysis.rating) }}>
+                        {estimatedAnalysis.label}
+                      </span>
+                    </div>
+                    <div style={{ marginTop: 'var(--s3)', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                      {estimatedAnalysis.factors.map((f, i) => (
+                        <div key={i} className={'cc-synergy ' + f.kind} style={{ margin: 0 }}>
+                          {f.kind === 'good' ? '✓' : f.kind === 'bad' ? '✕' : 'ⓘ'} {f.text}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <button className="btn btn-primary w-full mt-4"
-                  onClick={handleSave} disabled={score == null}>
+                  onClick={handleSave} disabled={!myPickComplete}>
                   Guardar composición
                 </button>
               </>

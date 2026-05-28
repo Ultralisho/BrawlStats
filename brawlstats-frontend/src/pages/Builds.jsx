@@ -39,11 +39,17 @@ const CDN = {
   starPower: id => `https://cdn.brawlify.com/star-powers/regular/${id}.png`,
 };
 
-// Siempre construimos la URL desde el id usando /regular/, ya que imageUrl
-// almacenado puede contener /borderless/ (formato antiguo de BrawlAPI)
-// que no existe para IDs >= 23001xxx.
-const imgGadget    = g  => g  ? (g.id  ? CDN.gadget(g.id)     : null) : null;
-const imgStarPower = sp => sp ? (sp.id ? CDN.starPower(sp.id) : null) : null;
+// BrawlAPI devuelve imageUrl en /borderless/, que da 404 para los IDs nuevos.
+// Forzamos siempre /regular/ (existe para todos los IDs).
+const fixCdn = (url) => typeof url === 'string'
+  ? url.replace('/gadgets/borderless/', '/gadgets/regular/')
+       .replace('/star-powers/borderless/', '/star-powers/regular/')
+  : url;
+
+// Priorizamos la URL construida por id (sabemos que /regular/ funciona) y
+// caemos al imageUrl normalizado solo si no hay id.
+const imgGadget    = g  => g  ? (g.id  ? CDN.gadget(g.id)    : fixCdn(g.imageUrl)  || null) : null;
+const imgStarPower = sp => sp ? (sp.id ? CDN.starPower(sp.id) : fixCdn(sp.imageUrl) || null) : null;
 const imgBrawler   = b  => b  ? (b.id  ? CDN.brawler(b.id)    : b.imageUrl || null) : null;
 
 /* ──────────────────────────────────────────────────────────────────
@@ -78,9 +84,21 @@ function getRecommendedBuild(brawler, mode) {
 /* ──────────────────────────────────────────────────────────────────
  * Imagen con fallback
  * ────────────────────────────────────────────────────────────────── */
-function ImgWithFallback({ src, alt, fallbackText, color = '#3b82f6', size = 48, style }) {
-  const [failed, setFailed] = useState(false);
-  if (failed || !src) {
+function ImgWithFallback({ src, fallbackSrc, alt, fallbackText, color = '#3b82f6', size = 48, style }) {
+  const [useFallback, setUseFallback] = useState(false);
+  const [allFailed,   setAllFailed]   = useState(false);
+
+  const currentSrc = useFallback ? fallbackSrc : src;
+
+  const handleError = () => {
+    if (!useFallback && fallbackSrc) {
+      setUseFallback(true);
+    } else {
+      setAllFailed(true);
+    }
+  };
+
+  if (allFailed || !currentSrc) {
     return (
       <div
         aria-label={alt}
@@ -99,10 +117,10 @@ function ImgWithFallback({ src, alt, fallbackText, color = '#3b82f6', size = 48,
   }
   return (
     <img
-      src={src}
+      src={currentSrc}
       alt={alt}
       loading="lazy"
-      onError={() => setFailed(true)}
+      onError={handleError}
       style={{ width: size, height: size, objectFit: 'contain', flexShrink: 0, display: 'block', ...style }}
     />
   );
@@ -146,6 +164,7 @@ function BrawlerCard({ brawler, onClick }) {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 'var(--s2)' }}>
         <ImgWithFallback
           src={imgBrawler(brawler)}
+          fallbackSrc={brawler.imageUrl || null}
           alt={brawler.name}
           fallbackText={brawler.name}
           color={rarityColor}
@@ -254,6 +273,30 @@ function BrawlerCard({ brawler, onClick }) {
           </div>
         )}
       </div>
+
+      {/* Hipercarga */}
+      {brawler.hypercharge && (
+        <div>
+          <div
+            style={{
+              fontSize: 10,
+              fontWeight: 700,
+              letterSpacing: '0.12em',
+              textTransform: 'uppercase',
+              color: 'var(--text-3)',
+              marginBottom: 6,
+              paddingBottom: 4,
+              borderBottom: '1px solid var(--border)',
+            }}
+          >
+            Hipercarga recomendada
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>⚡</span>
+            <span style={{ fontSize: 12, color: '#FACC15', fontWeight: 700 }}>{brawler.hypercharge.name}</span>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -358,6 +401,7 @@ function BuildPanel({ brawler, onClose }) {
           <div style={{ display: 'flex', gap: 'var(--s4)', alignItems: 'center', minWidth: 0 }}>
             <ImgWithFallback
               src={imgBrawler(brawler)}
+              fallbackSrc={brawler.imageUrl || null}
               alt={brawler.name}
               fallbackText={brawler.name}
               color={rarityColor}

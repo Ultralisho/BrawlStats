@@ -22,6 +22,8 @@ async function fetchApi(endpoint, options = {}) {
 
   const json = await response.json();
   // Desempaqueta el envelope { success: true, data: ... } del backend
+  if (options.withMeta && json && json.success === true && 'data' in json)
+    return { data: json.data, meta: json.meta ?? null };
   return (json && json.success === true && 'data' in json) ? json.data : json;
 }
 

@@ -11,7 +11,7 @@ import { AuthContext } from '../App';
 
 /* ── Helpers ─────────────────────────────────────────────────────────────── */
 
-const TAG_REGEX   = /^#[0-9A-Z]{6,9}$/i;
+const TAG_REGEX   = /^#[0-9A-Z]{3,12}$/i;
 const CDN_ICON    = (id) => `https://cdn.brawlify.com/profile-icons/regular/${id}.png`;
 const CDN_BRAWLER = (id) => `https://cdn.brawlify.com/brawlers/borders/${id}.png`;
 
@@ -228,7 +228,7 @@ export default function Comparador() {
   const searchPlayer = useCallback(async (idx, rawTag) => {
     const tag = (rawTag || tags[idx]).trim().toUpperCase();
     if (!TAG_REGEX.test(tag)) {
-      setTagErrs(prev => prev.map((e, i) => i === idx ? 'Tag inválido (ej: #ABCD1234)' : e));
+      setTagErrs(prev => prev.map((e, i) => i === idx ? 'Tag inválido (ej: #2LO8J0VRCL)' : e));
       return;
     }
     setTagErrs(prev => prev.map((e, i) => i === idx ? null : e));
@@ -597,7 +597,7 @@ export default function Comparador() {
               Introduce dos tags de jugador para comparar
             </div>
             <div style={{ fontSize: 12 }}>
-              El tag debe empezar por # y tener entre 6 y 9 caracteres alfanuméricos
+              El tag debe empezar por # seguido de caracteres alfanuméricos
             </div>
           </div>
         )}

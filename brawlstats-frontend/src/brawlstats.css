@@ -874,6 +874,10 @@ button { cursor: pointer; font-family: var(--font-body); }
 .lfield { display: flex; flex-direction: column; gap: 6px; }
 .lfield label { font-size: 12px; font-weight: 600; color: var(--t-2); letter-spacing: 0.04em; }
 .lfield-row { display: flex; justify-content: space-between; align-items: baseline; }
+.lfield-error { font-size: 11.5px; color: #ef4444; font-weight: 500; margin-top: -2px; }
+.linput.is-error { border-color: #ef4444; }
+.linput.is-error:focus-within { border-color: #ef4444; box-shadow: 0 0 0 4px rgba(239,68,68,.14); }
+.lcheck-box.is-error { border-color: #ef4444; }
 .llink { font-size: 12px; color: var(--accent); font-weight: 600; transition: color .15s; }
 .llink:hover { color: var(--accent-2); }
 .linput {

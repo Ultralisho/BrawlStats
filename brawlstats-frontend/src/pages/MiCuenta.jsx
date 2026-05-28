@@ -73,12 +73,26 @@ export default function MiCuenta() {
     const load = async () => {
       setLoading(true); setError(null);
       try {
-        const p = await fetchApi('/players/me');
+        const [meRes, playerRes] = await Promise.allSettled([
+          fetchApi('/auth/me'),
+          fetchApi('/players/me'),
+        ]);
         if (!alive) return;
-        setPlayer(p);
-        const log = await fetchApi('/stats/battlelog').catch(() => []);
-        if (!alive) return;
-        setBattleLog(Array.isArray(log) ? log : []);
+
+        if (meRes.status === 'fulfilled') {
+          setName(meRes.value.name || '');
+          setCountry(meRes.value.country || '');
+        }
+
+        if (playerRes.status === 'rejected') {
+          if (playerRes.reason?.message?.includes('vinculado')) setNoPlayer(true);
+          else setError(playerRes.reason?.message);
+        } else {
+          setPlayer(playerRes.value);
+          const log = await fetchApi('/stats/battlelog').catch(() => []);
+          if (!alive) return;
+          setBattleLog(Array.isArray(log) ? log : []);
+        }
       } catch (err) {
         if (!alive) return;
         if (err.message && err.message.includes('vinculado')) setNoPlayer(true);

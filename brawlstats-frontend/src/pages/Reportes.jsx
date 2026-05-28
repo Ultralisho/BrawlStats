@@ -140,6 +140,7 @@ export default function Reportes() {
   }
 
   const hasGenerating = reports.some(r => r.status === 'generating' || r.status === 'pending');
+  const atLimit = reports.length >= 5;
 
   return (
     <Layout>
@@ -162,7 +163,15 @@ export default function Reportes() {
         <div className="card" style={{ marginBottom: 'var(--s5)' }}>
           <div className="card-header">
             <span className="card-title">Nuevo reporte</span>
+            <span style={{ fontSize:12, color: atLimit ? '#ef4444' : 'var(--text-3)', fontFamily:'var(--font-mono)' }}>
+              {reports.length} / 5 reportes usados
+            </span>
           </div>
+          {atLimit && (
+            <div className="alert alert-error" style={{ marginBottom:'var(--s3)' }}>
+              Elimina un reporte existente para poder crear uno nuevo.
+            </div>
+          )}
           <form onSubmit={generar}>
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 1.5fr 1.5fr', gap: 'var(--s4)', marginBottom: 'var(--s4)' }}>
               <div className="form-group" style={{ margin: 0 }}>
@@ -200,10 +209,10 @@ export default function Reportes() {
             {genError   && <div className="alert alert-error"   style={{ marginBottom: 'var(--s3)' }}>{genError}</div>}
             {genSuccess && <div className="alert alert-success" style={{ marginBottom: 'var(--s3)' }}>{genSuccess}</div>}
 
-            <button type="submit" className="btn btn-primary" disabled={generating}>
+            <button type="submit" className="btn btn-primary" disabled={generating || atLimit}>
               {generating ? (
                 <><span className="loading-spinner" style={{ width: 14, height: 14 }} /> Generando…</>
-              ) : '+ Generar reporte'}
+              ) : atLimit ? 'Límite alcanzado' : '+ Generar reporte'}
             </button>
           </form>
         </div>

@@ -13,6 +13,14 @@ const RARITY_COLORS = {
   legendary:  '#FACC15',
 };
 
+// Color por win rate (misma convención que la Tier List: rojo = meta dominante)
+const wrColor = (wr) =>
+  wr == null ? 'var(--color-text-muted)' :
+  wr >= 60   ? '#EF4444' :
+  wr >= 55   ? '#F59E0B' :
+  wr >= 50   ? '#22C55E' :
+  wr >= 45   ? '#3B82F6' : '#8B5CF6';
+
 function BrawlerImg({ id, name, color, size = 80 }) {
   const [failed, setFailed] = useState(false);
   const fallback = (
@@ -49,12 +57,47 @@ export default function Brawlers() {
   const [search,    setSearch]    = useState(searchParams.get('search') || '');
   const [rarityF,   setRarityF]   = useState('all');
   const [roleF,     setRoleF]     = useState('all');
+  const [topPlayers, setTopPlayers] = useState([]);
+  const [wrById,    setWrById]    = useState({});
+  const [hcById,    setHcById]    = useState({});
+  const [sortBy,    setSortBy]    = useState('name');
 
   useEffect(() => {
     fetchApi('/brawlers')
       .then(data => setBrawlers(Array.isArray(data) ? data : []))
       .catch(err => setError(err.message))
       .finally(() => setLoading(false));
+  }, []);
+
+  // Top 5 mundial de jugadores (ranking global de la API oficial)
+  useEffect(() => {
+    fetchApi('/leaderboard/global')
+      .then(data => setTopPlayers(Array.isArray(data) ? data.slice(0, 5) : []))
+      .catch(() => setTopPlayers([]));
+  }, []);
+
+  // Hypercharge por brawler (directo a BrawlAPI)
+  useEffect(() => {
+    fetch('/api/brawlapi/brawlers')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        const list = Array.isArray(data?.list) ? data.list : [];
+        const map = {};
+        list.forEach(b => { map[b.id] = !!b.hypercharge; });
+        setHcById(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Win rate global por brawler (para los badges y el orden)
+  useEffect(() => {
+    fetchApi('/brawlers/winrates')
+      .then(data => {
+        const map = {};
+        (Array.isArray(data) ? data : []).forEach(w => { map[w.id] = { winRate: w.winRate, games: w.games }; });
+        setWrById(map);
+      })
+      .catch(() => setWrById({}));
   }, []);
 
   const rarities = ['all', ...new Set(brawlers.map(b => b.rarity).filter(Boolean))];
@@ -67,6 +110,16 @@ export default function Brawlers() {
     return matchSearch && matchRarity && matchRole;
   });
 
+  const sorted = sortBy === 'winRate'
+    ? [...filtered].sort((a, b) => {
+        const wa = wrById[a.id]?.winRate, wb = wrById[b.id]?.winRate;
+        if (wa == null && wb == null) return (a.name || '').localeCompare(b.name || '');
+        if (wa == null) return 1;
+        if (wb == null) return -1;
+        return wb - wa;
+      })
+    : filtered;
+
   return (
     <Layout>
       <Topbar title="Brawlers" />
@@ -74,6 +127,47 @@ export default function Brawlers() {
         {error && (
           <div style={{ background:'rgba(239,68,68,0.12)', border:'1px solid #ef4444', borderRadius:'8px', padding:'0.75rem 1rem', marginBottom:'1rem', color:'#ef4444' }}>
             {error}
+          </div>
+        )}
+
+        {topPlayers.length > 0 && (
+          <div className="card" style={{ marginBottom:'1.5rem' }}>
+            <div style={{ display:'flex', alignItems:'center', gap:8, marginBottom:'1rem' }}>
+              <span style={{ fontSize:11, fontWeight:700, letterSpacing:'0.1em', textTransform:'uppercase', color:'var(--color-text-muted)' }}>
+                Top 5 mundial
+              </span>
+              <span style={{ fontSize:11, color:'var(--color-text-muted)' }}>· por trofeos · ranking oficial</span>
+            </div>
+            <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(170px,1fr))', gap:'0.75rem' }}>
+              {topPlayers.map((p, i) => {
+                const cleanTag = (p.tag || '').replace('#', '');
+                const medal = ['🥇','🥈','🥉'][i] || ('#' + (i + 1));
+                return (
+                  <button
+                    key={p.tag || i}
+                    type="button"
+                    onClick={() => cleanTag && navigate('/jugador/' + cleanTag)}
+                    title={cleanTag ? 'Ver perfil de ' + p.name : ''}
+                    style={{
+                      textAlign:'left', display:'flex', alignItems:'center', gap:'0.6rem',
+                      padding:'0.6rem 0.75rem', background:'rgba(255,255,255,0.03)',
+                      border:'1px solid rgba(255,255,255,0.08)', borderRadius:8,
+                      cursor: cleanTag ? 'pointer' : 'default',
+                    }}
+                  >
+                    <span style={{ fontSize:'1.1rem', minWidth:26, textAlign:'center' }}>{medal}</span>
+                    <div style={{ minWidth:0 }}>
+                      <div style={{ fontWeight:600, color:'var(--color-gold)', whiteSpace:'nowrap', overflow:'hidden', textOverflow:'ellipsis' }}>
+                        {p.name}
+                      </div>
+                      <div style={{ fontSize:'0.8em', color:'var(--color-text-muted)', fontFamily:'monospace' }}>
+                        {p.trophies != null ? p.trophies.toLocaleString('es-ES') : '-'} 🏆
+                      </div>
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
           </div>
         )}
 
@@ -95,6 +189,10 @@ export default function Brawlers() {
               {roles.map(r => (
                 <option key={r} value={r}>{r === 'all' ? 'Todos los roles' : r}</option>
               ))}
+            </select>
+            <select className="form-input" value={sortBy} onChange={e => setSortBy(e.target.value)} style={{ minWidth:'150px' }}>
+              <option value="name">Ordenar: A–Z</option>
+              <option value="winRate">Ordenar: Win rate</option>
             </select>
             <span style={{ color:'var(--color-text-muted)', fontSize:'0.9em', whiteSpace:'nowrap' }}>
               {filtered.length} brawlers
@@ -118,8 +216,10 @@ export default function Brawlers() {
           </p>
         ) : (
           <div className="brawler-grid">
-            {filtered.map(b => {
+            {sorted.map(b => {
               const color = RARITY_COLORS[b.rarity] || '#9ca3af';
+              const wr = wrById[b.id]?.winRate;
+              const hasHC = hcById[b.id] === true;
               return (
                 <div
                   key={b.id}
@@ -139,6 +239,16 @@ export default function Brawlers() {
                     {b.role && (
                       <span style={{ background:'rgba(255,255,255,0.07)', color:'var(--color-text-muted)', borderRadius:'4px', padding:'2px 6px', fontSize:'0.72em' }}>
                         {b.role}
+                      </span>
+                    )}
+                    {wr != null && (
+                      <span style={{ background: wrColor(wr) + '22', color: wrColor(wr), borderRadius:'4px', padding:'2px 6px', fontSize:'0.72em', fontWeight:700, fontFamily:'monospace' }}>
+                        {wr}%
+                      </span>
+                    )}
+                    {hasHC && (
+                      <span style={{ background:'rgba(250,204,21,0.18)', color:'#FACC15', borderRadius:'4px', padding:'2px 6px', fontSize:'0.72em', fontWeight:800, border:'1px solid rgba(250,204,21,0.35)' }}>
+                        ⚡HC
                       </span>
                     )}
                   </div>

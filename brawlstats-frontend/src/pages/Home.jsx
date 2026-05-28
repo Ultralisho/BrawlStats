@@ -364,6 +364,12 @@ const MODE_ICO_KEY = {
   'Hold The Trophy':'star', 'Bot Drop':'skull', 'Siege':'bolt',
 };
 
+// BrawlAPI devuelve el nombre del modo en MAYÚSCULAS ("BRAWL BALL"); lo normalizamos.
+const titleCase = (s) => (s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+// El icono de modo de Brawlify usa el id completo del modo (ej. 48000005):
+// cdn.brawlify.com/game-modes/regular/{mode.id}.png
+const modeIconUrl = (modeId) => modeId ? `https://cdn.brawlify.com/game-modes/regular/${modeId}.png` : null;
+
 const RANKING = [
   { rank:1, name:'Eloxitaa',    tag:'#LP2PPU', trophies:266174, country:'ES' },
   { rank:2, name:'prostislavv', tag:'#ROST22', trophies:239652, country:'RU' },
@@ -668,7 +674,7 @@ function EventIcon({ src, modeName }) {
       height={40}
       loading="lazy"
       onError={() => setFailed(true)}
-      style={{ width:40, height:40, borderRadius:10, objectFit:'cover', border:'1px solid var(--line)', background:'var(--bg-2)' }}
+      style={{ width:40, height:40, borderRadius:10, objectFit:'contain', padding:4, border:'1px solid var(--line)', background:'var(--bg-2)' }}
     />
   );
 }
@@ -716,16 +722,16 @@ function Events() {
           </p>
         )}
         {events.map((ev, i) => {
-          const mode    = ev.map?.gameMode?.name || 'Evento';
+          const mode    = titleCase(ev.mode?.name) || 'Evento';
           const mapName = ev.map?.name || '—';
-          const img     = ev.map?.imageUrl || null;
+          const img     = modeIconUrl(ev.mode?.id);
           const start   = ev.startTime ? new Date(ev.startTime).getTime() : null;
           const end     = ev.endTime   ? new Date(ev.endTime).getTime()   : null;
           const totalSec= start && end ? Math.max(1, Math.floor((end - start)/1000)) : 0;
           const leftSec = end ? Math.max(0, Math.floor((end - now)/1000)) : 0;
           const pct     = totalSec ? Math.max(0, Math.min(100, (leftSec / totalSec) * 100)) : 0;
           return (
-            <article className="card ev" key={ev.slot?.id ?? i}>
+            <article className="card ev" key={ev.slot ?? i}>
               <div className="ev-head">
                 <EventIcon src={img} modeName={mode} />
                 <div>

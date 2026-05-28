@@ -14,16 +14,16 @@ const MODE_ICONS = {
   'Heist':'💰', 'Duels':'⚔️', 'Wipeout':'💥', 'Siege':'🛡️',
 };
 
-// IDs propios de brawlify para los iconos de modo (cdn.brawlify.com/game-modes/regular/{id}.png)
-const MODE_IMG_ID = {
-  'Gem Grab':1, 'Showdown':2, 'Brawl Ball':3, 'Solo Showdown':4, 'Duo Showdown':5,
-  'Bounty':6, 'Heist':7, 'Siege':9, 'Hot Zone':17, 'Basket Brawl':23,
-  'Duels':24, 'Wipeout':38, 'Knockout':39, 'Paint Brawl':49, 'Trio Showdown':51,
-};
-function modeImgUrl(modeName) {
-  const id = MODE_IMG_ID[modeName];
-  return id ? `https://cdn.brawlify.com/game-modes/regular/${id}.png` : null;
-}
+// El icono de modo de Brawlify usa el id completo del modo (ej. 48000005):
+// cdn.brawlify.com/game-modes/regular/{gameMode.id}.png
+const modeImgUrl = (modeId) => modeId ? `https://cdn.brawlify.com/game-modes/regular/${modeId}.png` : null;
+
+// BrawlAPI devuelve el nombre del modo en MAYÚSCULAS ("BRAWL BALL"); lo
+// normalizamos a "Brawl Ball" para casarlo con las etiquetas del backend.
+const titleCase = (s) => (s || '').toLowerCase().replace(/\b\w/g, c => c.toUpperCase());
+
+// Color de la barra de win rate (umbral del spec): verde >60, amarillo 50-60, rojo <50
+const barColor = (wr) => wr > 60 ? '#22c55e' : wr >= 50 ? '#facc15' : '#ef4444';
 
 export default function MapaDetail() {
   const { id }   = useParams();
@@ -33,10 +33,8 @@ export default function MapaDetail() {
   const [brawlers, setBrawlers] = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [error,    setError]    = useState(null);
-
-  // Orden por defecto: Pick Rate descendente (igual al spec)
-  const [sortKey, setSortKey] = useState('useRate');
-  const [sortDir, setSortDir] = useState('desc');
+  const [bestByMode, setBestByMode] = useState([]);
+  const [bestLoading, setBestLoading] = useState(false);
 
   useEffect(() => {
     let alive = true;
@@ -78,6 +76,27 @@ export default function MapaDetail() {
     return () => { alive = false; };
   }, [id]);
 
+  // Mejores brawlers para este mapa: BrawlAPI ya no expone stats por mapa, así
+  // que usamos el win rate agregado del MODO del mapa (única señal de la API).
+  useEffect(() => {
+    const modeName = map?.gameMode?.name;
+    if (!modeName) { setBestByMode([]); return; }
+    let alive = true;
+    setBestLoading(true);
+    fetchApi('/brawlers/winrates?mode=' + encodeURIComponent(titleCase(modeName)) + '&minSamples=3')
+      .then(d => {
+        if (!alive) return;
+        const list = Array.isArray(d) ? d : [];
+        const best = list.filter(b => b.winRate != null)
+                         .sort((a, b) => b.winRate - a.winRate)
+                         .slice(0, 8);
+        setBestByMode(best);
+      })
+      .catch(() => { if (alive) setBestByMode([]); })
+      .finally(() => { if (alive) setBestLoading(false); });
+    return () => { alive = false; };
+  }, [map]);
+
   const brawlerNameById = (bid) => {
     const found = brawlers.find(b => Number(b.id) === Number(bid));
     return found?.name || ('#' + bid);
@@ -100,29 +119,21 @@ export default function MapaDetail() {
     });
   }, [map, brawlers]);
 
-  const sorted = useMemo(() => {
-    return [...stats].sort((a, b) => {
-      const av = a[sortKey] ?? 0;
-      const bv = b[sortKey] ?? 0;
-      return sortDir === 'desc' ? bv - av : av - bv;
-    });
-  }, [stats, sortKey, sortDir]);
-
-  const handleSort = (key) => {
-    if (sortKey === key) {
-      setSortDir(d => d === 'desc' ? 'asc' : 'desc');
-    } else {
-      setSortKey(key);
-      setSortDir('desc');
+  // Mejores brawlers del mapa: usa las stats por-mapa si existen (señal más
+  // específica); si no, cae al win rate del modo (bestByMode). Ambas fuentes
+  // se normalizan a { id, name, winRate }.
+  const bestBrawlers = useMemo(() => {
+    if (stats.length > 0) {
+      return [...stats]
+        .filter(s => s.winRate != null && s.winRate > 0)
+        .sort((a, b) => b.winRate - a.winRate)
+        .slice(0, 10)
+        .map(s => ({ id: s.brawlerId, name: s.name, winRate: s.winRate }));
     }
-  };
+    return bestByMode.map(b => ({ id: b.id, name: b.name, winRate: b.winRate }));
+  }, [stats, bestByMode]);
 
-  const sortArrow = (key) => {
-    if (sortKey !== key) return null;
-    return <span className="mapa-detail-sort-arrow">{sortDir === 'desc' ? '▼' : '▲'}</span>;
-  };
-
-  const wrColor = (wr) => wr > 55 ? '#22c55e' : wr >= 45 ? '#facc15' : '#ef4444';
+  const truncName = (n) => (n && n.length > 10 ? n.slice(0, 10) + '…' : (n || ''));
 
   if (loading) return (
     <Layout>
@@ -150,7 +161,7 @@ export default function MapaDetail() {
 
   const modeName  = map.gameMode?.name || '—';
   const modeIcon  = MODE_ICONS[modeName] || '🎮';
-  const modeImg   = modeImgUrl(modeName); // URL construida desde nuestro mapeo (evita 404)
+  const modeImg   = modeImgUrl(map.gameMode?.id); // icono de modo de Brawlify por id
   const modeColor = map.gameMode?.color || 'var(--blue)';
   const envName   = map.environment?.name || null;
   const isCompetitive = COMPETITIVE_MODES.has(modeName);
@@ -209,62 +220,65 @@ export default function MapaDetail() {
               </div>
             </div>
 
-            {/* Tabla de brawlers */}
-            {sorted.length === 0 ? (
+            {/* Mejores brawlers para este mapa — lista con barra de win rate */}
+            <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', marginBottom:'0.75rem' }}>
+              <span style={{ fontSize:13, fontWeight:700, color:'var(--text-2)', textTransform:'uppercase', letterSpacing:'0.05em' }}>
+                Mejores brawlers
+              </span>
+              <span style={{ fontSize:11, color:'var(--text-3)' }}>
+                {titleCase(modeName)} · win rate
+              </span>
+            </div>
+
+            {bestLoading && bestBrawlers.length === 0 ? (
+              <p style={{ color:'var(--text-3)', textAlign:'center', padding:'1.5rem', fontSize:13 }}>Calculando…</p>
+            ) : bestBrawlers.length === 0 ? (
               <div style={{ textAlign:'center', padding:'2rem', color:'var(--text-3)' }}>
                 <div style={{ fontSize:32, marginBottom:8 }}>📊</div>
                 <div style={{ fontSize:13, fontWeight:600, color:'var(--text-2)', marginBottom:4 }}>
                   Sin estadísticas disponibles
                 </div>
                 <div style={{ fontSize:12 }}>
-                  Las estadísticas solo están disponibles para mapas en rotación activa.
+                  Aún no hay suficientes partidas en <strong>{titleCase(modeName)}</strong> para
+                  estimar los mejores brawlers de este mapa.
                 </div>
               </div>
             ) : (
-              <div className="mapa-detail-table-wrap">
-                <div className="mapa-detail-table-scroll">
-                  <table className="mapa-detail-table">
-                    <thead>
-                      <tr>
-                        <th>Brawler</th>
-                        <th
-                          className={'mapa-detail-th-sortable' + (sortKey === 'winRate' ? ' is-active' : '')}
-                          onClick={() => handleSort('winRate')}
-                        >
-                          Win Rate{sortArrow('winRate')}
-                        </th>
-                        <th
-                          className={'mapa-detail-th-sortable mapa-detail-hide-mobile' + (sortKey === 'useRate' ? ' is-active' : '')}
-                          onClick={() => handleSort('useRate')}
-                        >
-                          Pick Rate{sortArrow('useRate')}
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sorted.map(s => (
-                        <tr key={s.brawlerId}>
-                          <td>
-                            <Link to={'/brawlers/' + s.brawlerId} className="mapa-detail-row">
-                              <img
-                                src={'https://cdn.brawlify.com/brawlers/borders/' + s.brawlerId + '.png'}
-                                alt={s.name}
-                                onError={e => { e.currentTarget.style.visibility = 'hidden'; }}
-                              />
-                              <span style={{ fontWeight:500 }}>{s.name}</span>
-                            </Link>
-                          </td>
-                          <td style={{ color: wrColor(s.winRate), fontFamily:'var(--font-mono)', fontWeight:700 }}>
-                            {s.winRate.toFixed(1)}%
-                          </td>
-                          <td className="mapa-detail-hide-mobile" style={{ fontFamily:'var(--font-mono)', color:'var(--text-2)' }}>
-                            {s.useRate.toFixed(2)}%
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+              <div style={{ display:'flex', flexDirection:'column', gap:'0.4rem' }}>
+                {bestBrawlers.map((b, i) => (
+                  <Link
+                    key={b.id}
+                    to={'/brawlers/' + b.id}
+                    style={{ display:'flex', alignItems:'center', gap:'0.75rem', padding:'0.35rem 0.4rem', borderRadius:8, color:'inherit', textDecoration:'none' }}
+                  >
+                    <span style={{ fontSize:12, fontWeight:700, color:'var(--text-3)', minWidth:26, fontFamily:'var(--font-mono)' }}>
+                      #{i + 1}
+                    </span>
+                    <img
+                      src={'https://cdn.brawlify.com/brawlers/borders/' + b.id + '.png'}
+                      alt={b.name}
+                      width={40}
+                      height={40}
+                      onError={e => { e.currentTarget.style.visibility = 'hidden'; }}
+                      style={{ objectFit:'contain', flexShrink:0 }}
+                    />
+                    <span style={{ fontSize:13, fontWeight:600, color:'var(--text-1)', minWidth:88, whiteSpace:'nowrap' }} title={b.name}>
+                      {truncName(b.name)}
+                    </span>
+                    {b.winRate != null ? (
+                      <>
+                        <div style={{ flex:1, height:6, background:'rgba(255,255,255,0.1)', borderRadius:4, overflow:'hidden' }}>
+                          <div style={{ width: Math.min(100, b.winRate) + '%', height:'100%', background: barColor(b.winRate), borderRadius:4, transition:'width 0.6s ease' }} />
+                        </div>
+                        <span style={{ fontSize:12, fontWeight:700, fontFamily:'var(--font-mono)', color: barColor(b.winRate), minWidth:44, textAlign:'right' }}>
+                          {Math.round(b.winRate)}%
+                        </span>
+                      </>
+                    ) : (
+                      <div style={{ flex:1 }} />
+                    )}
+                  </Link>
+                ))}
               </div>
             )}
           </div>

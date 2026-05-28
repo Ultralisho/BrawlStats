@@ -44,31 +44,45 @@ const STRENGTH_LABEL = ['', 'débil', 'regular', 'buena', 'fuerte'];
 export default function Register() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ name: '', email: '', password: '', confirmPassword: '' });
+  const [form, setForm]       = useState({ name: '', email: '', password: '', confirmPassword: '' });
   const [showPw, setShowPw]   = useState(false);
   const [showCp, setShowCp]   = useState(false);
   const [agreed, setAgreed]   = useState(false);
-  const [error, setError]     = useState('');
+  const [errors, setErrors]   = useState({});
   const [loading, setLoading] = useState(false);
 
   const strength = pwStrength(form.password);
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+  const field = (k) => ({ onChange: e => { setForm(f => ({ ...f, [k]: e.target.value })); setErrors(ev => ({ ...ev, [k]: null })); } });
+
+  function validate() {
+    const e = {};
+    if (!form.name.trim())              e.name    = 'El nombre es obligatorio';
+    else if (form.name.trim().length < 2) e.name  = 'El nombre debe tener al menos 2 caracteres';
+    if (!form.email)                    e.email   = 'El email es obligatorio';
+    else if (!EMAIL_RE.test(form.email)) e.email  = 'Introduce un email válido (ej: usuario@correo.com)';
+    if (!form.password)                 e.password = 'La contraseña es obligatoria';
+    else if (form.password.length < 8)  e.password = 'La contraseña debe tener al menos 8 caracteres';
+    else if (!/[a-zA-Z]/.test(form.password)) e.password = 'La contraseña debe contener al menos una letra';
+    else if (!/[0-9]/.test(form.password))    e.password = 'La contraseña debe contener al menos un número';
+    if (!form.confirmPassword)          e.confirmPassword = 'Confirma tu contraseña';
+    else if (form.password !== form.confirmPassword) e.confirmPassword = 'Las contraseñas no coinciden';
+    if (!agreed)                        e.agreed  = 'Debes aceptar los términos';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.name || !form.email || !form.password || !form.confirmPassword) {
-      setError('Rellena todos los campos.'); return;
-    }
-    if (form.password !== form.confirmPassword) {
-      setError('Las contraseñas no coinciden.'); return;
-    }
+    if (!validate()) return;
     setLoading(true);
-    setError('');
+    setErrors({});
     try {
       const data = await fetchApi('/auth/register', { method: 'POST', body: { name: form.name, email: form.email, password: form.password } });
       login({ ...data.user, token: data.token });
       navigate('/dashboard');
     } catch (err) {
-      setError(err.message);
+      setErrors({ general: err.message });
     } finally {
       setLoading(false);
     }
@@ -162,40 +176,27 @@ export default function Register() {
 
             <div className="lfield">
               <label>Nombre de jugador</label>
-              <div className="linput">
+              <div className={'linput' + (errors.name ? ' is-error' : '')}>
                 <LI.user width="16" height="16"/>
-                <input
-                  type="text" placeholder="Tu nombre en el juego"
-                  value={form.name}
-                  onChange={e => setForm(f => ({ ...f, name: e.target.value }))}
-                  autoComplete="username"
-                />
+                <input type="text" placeholder="Tu nombre en el juego" value={form.name} {...field('name')} autoComplete="username"/>
               </div>
+              {errors.name && <div className="lfield-error">{errors.name}</div>}
             </div>
 
             <div className="lfield">
               <label>Email</label>
-              <div className="linput">
+              <div className={'linput' + (errors.email ? ' is-error' : '')}>
                 <LI.mail width="16" height="16"/>
-                <input
-                  type="email" placeholder="tu@email.com"
-                  value={form.email}
-                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                  autoComplete="email"
-                />
+                <input type="email" placeholder="tu@email.com" value={form.email} {...field('email')} autoComplete="email"/>
               </div>
+              {errors.email && <div className="lfield-error">{errors.email}</div>}
             </div>
 
             <div className="lfield">
               <label>Contraseña</label>
-              <div className="linput">
+              <div className={'linput' + (errors.password ? ' is-error' : '')}>
                 <LI.lock width="16" height="16"/>
-                <input
-                  type={showPw ? 'text' : 'password'} placeholder="Mínimo 8 caracteres"
-                  value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
-                  autoComplete="new-password"
-                />
+                <input type={showPw ? 'text' : 'password'} placeholder="Mín. 8 caracteres, 1 letra y 1 número" value={form.password} {...field('password')} autoComplete="new-password"/>
                 <button type="button" className="linput-eye" onClick={() => setShowPw(s => !s)} aria-label="Mostrar/ocultar contraseña">
                   {showPw ? <LI.eyeoff width="16" height="16"/> : <LI.eye width="16" height="16"/>}
                 </button>
@@ -206,33 +207,31 @@ export default function Register() {
                   <em>Fuerza: <b>{STRENGTH_LABEL[strength]}</b></em>
                 </div>
               )}
+              {errors.password && <div className="lfield-error">{errors.password}</div>}
             </div>
 
             <div className="lfield">
               <label>Confirmar contraseña</label>
-              <div className="linput">
+              <div className={'linput' + (errors.confirmPassword ? ' is-error' : '')}>
                 <LI.lock width="16" height="16"/>
-                <input
-                  type={showCp ? 'text' : 'password'} placeholder="Repetir contraseña"
-                  value={form.confirmPassword}
-                  onChange={e => setForm(f => ({ ...f, confirmPassword: e.target.value }))}
-                  autoComplete="new-password"
-                />
+                <input type={showCp ? 'text' : 'password'} placeholder="Repetir contraseña" value={form.confirmPassword} {...field('confirmPassword')} autoComplete="new-password"/>
                 <button type="button" className="linput-eye" onClick={() => setShowCp(s => !s)} aria-label="Mostrar/ocultar confirmación">
                   {showCp ? <LI.eyeoff width="16" height="16"/> : <LI.eye width="16" height="16"/>}
                 </button>
               </div>
+              {errors.confirmPassword && <div className="lfield-error">{errors.confirmPassword}</div>}
             </div>
 
             <label className="lcheck">
-              <input type="checkbox" checked={agreed} onChange={e => setAgreed(e.target.checked)}/>
-              <span className="lcheck-box"><LI.check width="11" height="11"/></span>
+              <input type="checkbox" checked={agreed} onChange={e => { setAgreed(e.target.checked); setErrors(ev => ({ ...ev, agreed: null })); }}/>
+              <span className={'lcheck-box' + (errors.agreed ? ' is-error' : '')}><LI.check width="11" height="11"/></span>
               <span className="lcheck-lbl">
                 Acepto los <a href="#" className="llink">términos</a> y la <a href="#" className="llink">privacidad</a>
               </span>
             </label>
+            {errors.agreed && <div className="lfield-error" style={{ marginTop: -8 }}>{errors.agreed}</div>}
 
-            {error && <div className="alert alert-error">{error}</div>}
+            {errors.general && <div className="alert alert-error">{errors.general}</div>}
 
             <button
               type="submit"

@@ -1,20 +1,67 @@
-﻿import { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import fetchApi from '../services/api';
 import Topbar from '../components/Topbar';
 import KpiCard from '../components/KpiCard';
 
-const TABS = ['Global', 'Pais', 'Local'];
+const TABS = ['Global', 'Pais'];
+
+const COUNTRIES = [
+  { code: 'ES', name: 'España' },
+  { code: 'US', name: 'Estados Unidos' },
+  { code: 'MX', name: 'México' },
+  { code: 'AR', name: 'Argentina' },
+  { code: 'BR', name: 'Brasil' },
+  { code: 'DE', name: 'Alemania' },
+  { code: 'FR', name: 'Francia' },
+  { code: 'KR', name: 'Corea del Sur' },
+  { code: 'CN', name: 'China' },
+  { code: 'JP', name: 'Japón' },
+];
+
+function PlayerAvatar({ player }) {
+  const [failed, setFailed] = useState(false);
+  const iconId = player?.icon?.id;
+  const src = iconId ? `https://cdn.brawlify.com/profile-icons/regular/${iconId}.png` : null;
+  const initial = (player?.name || '?')[0].toUpperCase();
+
+  const wrap = {
+    width: 32, height: 32, borderRadius: '50%',
+    background: 'var(--bg-elevated)', border: '1px solid var(--border)',
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden', flexShrink: 0,
+  };
+
+  if (!src || failed) {
+    return (
+      <div style={wrap}>
+        <span style={{ fontWeight: 700, color: 'var(--text-2)', fontSize: 14 }}>{initial}</span>
+      </div>
+    );
+  }
+  return (
+    <div style={wrap}>
+      <img
+        src={src}
+        alt={player.name || ''}
+        width={32}
+        height={32}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        style={{ width: 32, height: 32, objectFit: 'cover' }}
+      />
+    </div>
+  );
+}
 
 export default function Leaderboards() {
   const navigate = useNavigate();
-  const [tab,          setTab]          = useState('Global');
-  const [players,      setPlayers]      = useState([]);
-  const [loading,      setLoading]      = useState(false);
-  const [error,        setError]        = useState(null);
-  const [countryInput, setCountryInput] = useState('ES');
-  const [country,      setCountry]      = useState('ES');
+  const [tab,     setTab]     = useState('Global');
+  const [players, setPlayers] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [error,   setError]   = useState(null);
+  const [country, setCountry] = useState('ES');
 
   const loadTab = async (activeTab, code) => {
     setLoading(true); setError(null); setPlayers([]);
@@ -22,10 +69,8 @@ export default function Leaderboards() {
       let data;
       if (activeTab === 'Global') {
         data = await fetchApi('/leaderboard/global');
-      } else if (activeTab === 'Pais') {
-        data = await fetchApi('/leaderboard/country/' + (code || 'ES'));
       } else {
-        data = await fetchApi('/leaderboard/local');
+        data = await fetchApi('/leaderboard/country/' + (code || 'ES'));
       }
       setPlayers(Array.isArray(data) ? data : []);
     } catch (err) {
@@ -37,12 +82,6 @@ export default function Leaderboards() {
 
   useEffect(() => { loadTab(tab, country); }, [tab, country]);
 
-  const handleCountrySearch = (e) => {
-    e.preventDefault();
-    const code = countryInput.trim().toUpperCase();
-    if (code.length === 2) setCountry(code);
-  };
-
   const topPlayer   = players[0];
   const maxTrophies = topPlayer?.trophies ?? 0;
 
@@ -53,14 +92,16 @@ export default function Leaderboards() {
     return i + 1;
   };
 
+  const countryNameOf = (code) => COUNTRIES.find(c => c.code === code)?.name || code;
+
   return (
     <Layout>
       <Topbar title="Leaderboards" />
       <div style={{ padding:'1.5rem', flex:1, overflowY:'auto' }}>
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))', gap:'1rem', marginBottom:'1.5rem' }}>
-          <KpiCard label="Jugadores"    value={players.length} />
+          <KpiCard label="Jugadores"     value={players.length} />
           <KpiCard label="Primer puesto" value={topPlayer?.name ?? '-'} />
-          <KpiCard label="Max trofeos"  value={maxTrophies ? maxTrophies.toLocaleString() : '-'} />
+          <KpiCard label="Max trofeos"   value={maxTrophies ? maxTrophies.toLocaleString() : '-'} />
         </div>
 
         <div className="card">
@@ -72,21 +113,22 @@ export default function Leaderboards() {
                 style={tab !== t ? { background:'transparent', border:'1px solid rgba(255,255,255,0.1)', color:'var(--color-text-muted)' } : {}}
                 onClick={() => setTab(t)}
               >
-                {t === 'Pais' ? 'Por Pais' : t}
+                {t === 'Pais' ? 'Por País' : t}
               </button>
             ))}
             {tab === 'Pais' && (
-              <form onSubmit={handleCountrySearch} style={{ display:'flex', gap:'0.5rem', marginLeft:'auto' }}>
-                <input
+              <div style={{ marginLeft:'auto' }}>
+                <select
                   className="form-input"
-                  value={countryInput}
-                  onChange={e => setCountryInput(e.target.value.toUpperCase())}
-                  maxLength={2}
-                  placeholder="ES"
-                  style={{ width:'64px', textAlign:'center', fontWeight:600, textTransform:'uppercase' }}
-                />
-                <button type="submit" className="btn btn-primary">Buscar</button>
-              </form>
+                  value={country}
+                  onChange={e => setCountry(e.target.value)}
+                  style={{ minWidth:'180px' }}
+                >
+                  {COUNTRIES.map(c => (
+                    <option key={c.code} value={c.code}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
             )}
           </div>
 
@@ -100,17 +142,19 @@ export default function Leaderboards() {
             <p style={{ color:'var(--color-text-muted)', padding:'2rem', textAlign:'center' }}>Cargando ranking...</p>
           ) : players.length === 0 ? (
             <p style={{ color:'var(--color-text-muted)', padding:'2rem', textAlign:'center' }}>
-              {tab === 'Local' ? 'Aun no hay jugadores registrados en BrawlStats.' : 'No hay datos disponibles para esta seleccion.'}
+              No hay datos disponibles para esta selección.
             </p>
           ) : (
             <table className="table">
               <thead>
                 <tr>
                   <th style={{ width:'48px' }}>#</th>
+                  <th style={{ width:'48px' }}></th>
                   <th>Jugador</th>
                   <th>Tag</th>
                   <th>Trofeos</th>
-                  {tab !== 'Local' && <th>Club</th>}
+                  <th>Club</th>
+                  <th>País</th>
                 </tr>
               </thead>
               <tbody>
@@ -127,10 +171,14 @@ export default function Leaderboards() {
                           {rankLabel(i)}
                         </span>
                       </td>
+                      <td><PlayerAvatar player={p} /></td>
                       <td style={{ fontWeight: i < 3 ? 600 : 400, color: 'var(--color-gold)' }}>{p.name}</td>
                       <td style={{ color:'var(--color-text-muted)', fontFamily:'monospace', fontSize:'0.85em' }}>{p.tag}</td>
                       <td style={{ color:'var(--color-gold)', fontWeight:600 }}>{p.trophies != null ? p.trophies.toLocaleString() : '-'}</td>
-                      {tab !== 'Local' && <td style={{ color:'var(--color-text-muted)', fontSize:'0.9em' }}>{p.club?.name ?? '-'}</td>}
+                      <td style={{ color:'var(--color-text-muted)', fontSize:'0.9em' }}>{p.club?.name ?? p.club ?? '-'}</td>
+                      <td style={{ color:'var(--color-text-muted)', fontSize:'0.9em' }}>
+                        {tab === 'Pais' ? countryNameOf(country) : '—'}
+                      </td>
                     </tr>
                   );
                 })}
@@ -142,5 +190,3 @@ export default function Leaderboards() {
     </Layout>
   );
 }
-
-

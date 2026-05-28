@@ -114,7 +114,7 @@ export default function Dashboard() {
           </div>
           <div className="card">
             <h3 className="card-title">Brawler favorito</h3>
-            <FavoriteWidget favorite={favorite} />
+            <FavoriteWidget favorite={favorite} brawlerList={player?.rawData?.brawlers || []} />
           </div>
           <div className="card">
             <h3 className="card-title">Modos jugados</h3>
@@ -192,6 +192,14 @@ export default function Dashboard() {
             <div className="brawler-grid">
               {brawlers.map(b => (
                 <div key={b.id} className="brawler-card" style={{ cursor:'pointer' }} onClick={() => navigate('/brawlers?search=' + encodeURIComponent(b.name))}>
+                  {b.id != null && (
+                    <img
+                      src={`https://cdn.brawlify.com/brawlers/borders/${b.id}.png`}
+                      alt={b.name}
+                      onError={e => { e.currentTarget.style.display = 'none'; }}
+                      style={{ width:40, height:40, objectFit:'contain', display:'block', margin:'0 auto 4px' }}
+                    />
+                  )}
                   <div className="brawler-name">{b.name}</div>
                   <div className="brawler-trophies">{b.trophies} trofeos</div>
                   <div style={{ fontSize:'0.75em', color:'var(--color-text-muted)', marginTop:'4px' }}>
@@ -265,13 +273,29 @@ function StreakWidget({ streak }) {
   );
 }
 
-function FavoriteWidget({ favorite }) {
+function FavBrawlerImg({ id, name }) {
+  const [failed, setFailed] = useState(false);
+  if (failed) return null;
+  return (
+    <img
+      src={`https://cdn.brawlify.com/brawlers/borders/${id}.png`}
+      alt={name}
+      onError={() => setFailed(true)}
+      style={{ width:48, height:48, borderRadius:'50%', border:'2px solid var(--color-gold)', objectFit:'contain', flexShrink:0, background:'rgba(250,204,21,0.1)' }}
+    />
+  );
+}
+
+function FavoriteWidget({ favorite, brawlerList = [] }) {
   const fav = favorite?.favorite;
   if (!fav) return <p style={{ color:'var(--color-text-muted)' }}>Sin partidas registradas todavia.</p>;
+  const matched   = brawlerList.find(b => (b.name || '').toLowerCase() === (fav.name || '').toLowerCase());
+  const brawlerId = matched?.id ?? null;
   return (
     <div>
-      <div style={{ fontSize:'1.4em', fontWeight:700, color:'var(--color-gold)', marginBottom:'0.4rem' }}>
-        {fav.name}
+      <div style={{ display:'flex', alignItems:'center', gap:'0.75rem', marginBottom:'0.5rem' }}>
+        {brawlerId != null && <FavBrawlerImg id={brawlerId} name={fav.name} />}
+        <div style={{ fontSize:'1.4em', fontWeight:700, color:'var(--color-gold)' }}>{fav.name}</div>
       </div>
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.5rem', fontSize:'0.85em' }}>
         <div>

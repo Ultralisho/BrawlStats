@@ -85,23 +85,34 @@ function LivePreview() {
 export default function Login() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [form, setForm] = useState({ email: '', password: '' });
-  const [showPw, setShowPw] = useState(false);
+  const [form, setForm]       = useState({ email: '', password: '' });
+  const [showPw, setShowPw]   = useState(false);
   const [remember, setRemember] = useState(true);
-  const [error, setError] = useState('');
+  const [errors, setErrors]   = useState({});
   const [loading, setLoading] = useState(false);
+
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  function validate() {
+    const e = {};
+    if (!form.email)                    e.email    = 'El email es obligatorio';
+    else if (!EMAIL_RE.test(form.email)) e.email   = 'Introduce un email válido (ej: usuario@correo.com)';
+    if (!form.password)                 e.password = 'La contraseña es obligatoria';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
 
   async function handleSubmit(e) {
     e.preventDefault();
-    if (!form.email || !form.password) { setError('Rellena todos los campos.'); return; }
+    if (!validate()) return;
     setLoading(true);
-    setError('');
+    setErrors({});
     try {
       const data = await fetchApi('/auth/login', { method: 'POST', body: { email: form.email, password: form.password } });
       login({ ...data.user, token: data.token });
       navigate('/dashboard');
     } catch (err) {
-      setError(err.message);
+      setErrors({ general: err.message });
     } finally {
       setLoading(false);
     }
@@ -180,15 +191,16 @@ export default function Login() {
 
             <div className="lfield">
               <label>Email</label>
-              <div className="linput">
+              <div className={'linput' + (errors.email ? ' is-error' : '')}>
                 <LI.mail width="16" height="16"/>
                 <input
                   type="email" placeholder="tu@email.com"
                   value={form.email}
-                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                  onChange={e => { setForm(f => ({ ...f, email: e.target.value })); setErrors(ev => ({ ...ev, email: null })); }}
                   autoComplete="email"
                 />
               </div>
+              {errors.email && <div className="lfield-error">{errors.email}</div>}
             </div>
 
             <div className="lfield">
@@ -196,18 +208,19 @@ export default function Login() {
                 <label>Contraseña</label>
                 <a href="#" className="llink">¿Olvidaste tu contraseña?</a>
               </div>
-              <div className="linput">
+              <div className={'linput' + (errors.password ? ' is-error' : '')}>
                 <LI.lock width="16" height="16"/>
                 <input
                   type={showPw ? 'text' : 'password'} placeholder="••••••••"
                   value={form.password}
-                  onChange={e => setForm(f => ({ ...f, password: e.target.value }))}
+                  onChange={e => { setForm(f => ({ ...f, password: e.target.value })); setErrors(ev => ({ ...ev, password: null })); }}
                   autoComplete="current-password"
                 />
                 <button type="button" className="linput-eye" onClick={() => setShowPw(s => !s)} aria-label="Mostrar/ocultar contraseña">
                   {showPw ? <LI.eyeoff width="16" height="16"/> : <LI.eye width="16" height="16"/>}
                 </button>
               </div>
+              {errors.password && <div className="lfield-error">{errors.password}</div>}
             </div>
 
             <label className="lcheck">
@@ -216,7 +229,7 @@ export default function Login() {
               <span className="lcheck-lbl">Mantener sesión abierta</span>
             </label>
 
-            {error && <div className="alert alert-error">{error}</div>}
+            {errors.general && <div className="alert alert-error">{errors.general}</div>}
 
             <button
               type="submit"

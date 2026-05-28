@@ -1,5 +1,6 @@
-﻿import React, { createContext, useContext, useState } from 'react';
+﻿import React, { createContext, useContext, useState, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import fetchApi from './services/api';
 import Home        from './pages/Home';
 import Login        from './pages/Login';
 import Register     from './pages/Register';
@@ -42,9 +43,25 @@ export default function App() {
   function logout() { localStorage.removeItem('bs_user'); localStorage.removeItem('bs_token'); setUser(null); }
   function getToken() { return localStorage.getItem('bs_token'); }
 
+  // Si hay token guardado, refrescamos el user desde el backend al montar.
+  // Así el `role` siempre refleja el valor actual de la BD y no un snapshot
+  // antiguo del localStorage (evita que un user con role cambiado siga viendo
+  // el panel admin escondido o al revés).
+  useEffect(() => {
+    if (!localStorage.getItem('bs_token')) return;
+    fetchApi('/auth/me')
+      .then(fresh => {
+        if (!fresh) return;
+        const d = { ...fresh, token: localStorage.getItem('bs_token'), role: fresh.role || 'user' };
+        localStorage.setItem('bs_user', JSON.stringify(d));
+        setUser(d);
+      })
+      .catch(() => { /* token caducado: protect del backend lanzará 401 al usar otra ruta y forzará logout */ });
+  }, []);
+
   return (
     <AuthContext.Provider value={{ user, login, logout, getToken }}>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
         <Routes>
           <Route path="/"              element={<Home />} />
           <Route path="/login"         element={<Login />} />

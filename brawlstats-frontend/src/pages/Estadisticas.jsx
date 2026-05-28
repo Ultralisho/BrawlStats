@@ -15,6 +15,7 @@ export default function Estadisticas() {
   const [noPlayer,  setNoPlayer]  = useState(false);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState(null);
+  const [syncing,   setSyncing]   = useState(false);
 
   const loadData = useCallback(async () => {
     setLoading(true); setError(null); setNoPlayer(false);
@@ -36,6 +37,18 @@ export default function Estadisticas() {
   }, []);
 
   useEffect(() => { loadData(); }, [loadData]);
+
+  const handleSync = async () => {
+    setSyncing(true); setError(null);
+    try {
+      await fetchApi('/players/sync', { method: 'POST' });
+      await loadData();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setSyncing(false);
+    }
+  };
 
   const brawlers   = [...(player?.rawData?.brawlers || [])].sort((a,b) => b.trophies - a.trophies);
   const brawlerIdByName = new Map(brawlers.map(b => [b.name.toLowerCase(), b.id]));
@@ -78,6 +91,16 @@ export default function Estadisticas() {
             {error}
           </div>
         )}
+
+        <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'1rem' }}>
+          <button
+            className="btn btn-secondary"
+            onClick={handleSync}
+            disabled={syncing}
+          >
+            {syncing ? 'Sincronizando...' : '↺ Sincronizar datos'}
+          </button>
+        </div>
 
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(180px,1fr))', gap:'1rem', marginBottom:'1.5rem' }}>
           <KpiCard label="Trofeos totales"  value={player?.trophies != null ? player.trophies.toLocaleString() : '-'} />
