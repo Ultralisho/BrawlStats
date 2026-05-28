@@ -13,3 +13,9 @@ brawlstats-backend/uploads/reports/*.pdf
 
 # Logs
 *.log
+
+# Artefactos de desarrollo locales (nunca subir al repo)
+Claude.md
+CLAUDE.md
+commit_script.sh
+commit_script.bash
