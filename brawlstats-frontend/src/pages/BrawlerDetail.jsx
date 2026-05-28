@@ -13,6 +13,14 @@ const RARITY_COLORS = {
   legendary:  '#FACC15',
 };
 
+// Código ISO de 2 letras → emoji de bandera (indicadores regionales unicode)
+function flagEmoji(code) {
+  if (!code || typeof code !== 'string' || code.length !== 2) return null;
+  const cc = code.toUpperCase();
+  if (!/^[A-Z]{2}$/.test(cc)) return null;
+  return String.fromCodePoint(...[...cc].map(c => 0x1f1e6 + c.charCodeAt(0) - 65));
+}
+
 export default function BrawlerDetail() {
   const { id }   = useParams();
   const navigate = useNavigate();
@@ -21,17 +29,20 @@ export default function BrawlerDetail() {
   const [ranking,    setRanking]    = useState([]);
   const [mySnaps,    setMySnaps]    = useState([]);  // entries from /stats/me filtered by brawlerId
   const [myWinRate,  setMyWinRate]  = useState(null); // { games, winRate, trophyChange } or null
+  const [hypercharge, setHypercharge] = useState(null);
 
   const [loading,        setLoading]        = useState(true);
   const [error,          setError]          = useState(null);
+  const [rankingLoading, setRankingLoading] = useState(true);
   const [rankingError,   setRankingError]   = useState(null);
   const [statsError,     setStatsError]     = useState(null);
 
   useEffect(() => {
     let alive = true;
     setLoading(true); setError(null);
-    setRanking([]); setRankingError(null);
+    setRanking([]); setRankingError(null); setRankingLoading(true);
     setMySnaps([]); setMyWinRate(null); setStatsError(null);
+    setHypercharge(null);
 
     // 1) Datos del brawler (bloqueante)
     fetchApi('/brawlers/' + id + '/full')
@@ -42,7 +53,8 @@ export default function BrawlerDetail() {
     // 2) Ranking top 5 (no bloqueante)
     fetchApi('/brawlers/' + id + '/ranking')
       .then(data => { if (alive) setRanking(Array.isArray(data) ? data : []); })
-      .catch(err  => { if (alive) setRankingError(err.message); });
+      .catch(err  => { if (alive) setRankingError(err.message); })
+      .finally(() => { if (alive) setRankingLoading(false); });
 
     // 3) Stats del usuario filtradas por brawlerId (no bloqueante,
     //    falla silenciosamente si el usuario no tiene player vinculado)
@@ -67,6 +79,12 @@ export default function BrawlerDetail() {
         setMyWinRate(match || null);
       })
       .catch(() => { /* opcional, ignorar */ });
+
+    // 5) Hypercharge desde BrawlAPI (via proxy backend)
+    fetch('/api/brawlapi/brawlers/' + id)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { if (alive && data?.hypercharge) setHypercharge(data.hypercharge); })
+      .catch(() => {});
 
     return () => { alive = false; };
   }, [id]);
@@ -189,15 +207,6 @@ export default function BrawlerDetail() {
           )}
         </div>
 
-        {/* ── Evolución de trofeos ── */}
-        <div className="card" style={{ marginBottom:'1.5rem' }}>
-          <h3 className="card-title">Evolución de trofeos · histórico personal</h3>
-          {mySnaps.length < 2
-            ? <p style={{ color:'var(--color-text-muted)' }}>Sin datos disponibles. Sincroniza varias veces para ver tu evolución con este brawler.</p>
-            : <TrophyChart data={mySnaps.map(s => ({ t: s.recordedAt, v: s.trophies }))} />
-          }
-        </div>
-
         <div style={{ display:'grid', gridTemplateColumns:'repeat(auto-fit, minmax(340px,1fr))', gap:'1.5rem', marginBottom:'1.5rem' }}>
 
           {/* ── Gadgets ── */}
@@ -243,43 +252,113 @@ export default function BrawlerDetail() {
           </div>
         </div>
 
+        {/* ── Hipercarga ── */}
+        {hypercharge && (
+          <div className="card" style={{ marginBottom:'1.5rem' }}>
+            <h3 className="card-title">Hipercarga</h3>
+            <div style={{ display:'flex', alignItems:'flex-start', gap:'1rem' }}>
+              <AbilityImg
+                src={hypercharge.imageUrl}
+                color="#FACC15"
+                fallback="⚡"
+                size={56}
+              />
+              <div style={{ flex:1 }}>
+                <div style={{ fontWeight:700, color:'#FACC15', fontSize:'1em', marginBottom:'0.4rem' }}>
+                  {hypercharge.name}
+                </div>
+                {hypercharge.description && (
+                  <p style={{ color:'var(--color-text-muted)', fontSize:'0.88em', lineHeight:1.6, margin:0 }}>
+                    {hypercharge.description}
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* ── Top 5 jugadores globales ── */}
         <div className="card">
           <h3 className="card-title">Top 5 mundial con {brawler.name}</h3>
-          {rankingError ? (
-            <p style={{ color:'var(--color-text-muted)' }}>Sin datos disponibles.</p>
-          ) : ranking.length === 0 ? (
-            <p style={{ color:'var(--color-text-muted)' }}>Sin datos disponibles.</p>
+          {rankingLoading ? (
+            <div style={{ textAlign:'center', padding:'2rem 1rem' }}>
+              <div className="loading-spinner" style={{ margin:'0 auto 0.75rem' }} />
+              <p style={{ color:'var(--color-text-muted)' }}>Reconstruyendo top mundial desde la API de Brawl Stars…</p>
+            </div>
+          ) : (rankingError || ranking.length === 0) ? (
+            <div style={{ textAlign:'center', padding:'2rem 1rem' }}>
+              <p style={{ color:'var(--color-text-muted)', marginBottom:'1.25rem' }}>
+                No hay datos de ranking disponibles para este brawler.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={() => navigate('/leaderboards')}
+              >
+                Ver ranking completo →
+              </button>
+            </div>
           ) : (
-            <table className="table">
-              <thead>
-                <tr>
-                  <th style={{ width:'48px' }}>#</th>
-                  <th>Jugador</th>
-                  <th>Tag</th>
-                  <th>Trofeos</th>
-                  <th>Club</th>
-                </tr>
-              </thead>
-              <tbody>
-                {ranking.map((p, i) => {
-                  const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (p.rank ?? i + 1);
-                  return (
-                    <tr key={p.tag || i}>
-                      <td>
-                        <span style={{ fontWeight:700, color: i === 0 ? '#FACC15' : i === 1 ? '#e2e8f0' : i === 2 ? '#cd7c2f' : 'var(--color-text-muted)', fontSize: i < 3 ? '1.1em' : '1em' }}>
-                          {medal}
-                        </span>
-                      </td>
-                      <td style={{ fontWeight: i < 3 ? 600 : 400 }}>{p.name}</td>
-                      <td style={{ color:'var(--color-text-muted)', fontFamily:'monospace', fontSize:'0.85em' }}>{p.tag}</td>
-                      <td style={{ color:'var(--color-gold)', fontWeight:600 }}>{p.trophies != null ? p.trophies.toLocaleString() : '-'}</td>
-                      <td style={{ color:'var(--color-text-muted)', fontSize:'0.9em' }}>{p.club || '-'}</td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+            <>
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th style={{ width:'48px' }}>#</th>
+                    <th style={{ width:'42px' }}></th>
+                    <th>Jugador</th>
+                    <th>Tag</th>
+                    <th>Trofeos</th>
+                    <th>Club</th>
+                    <th>País</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {ranking.map((p, i) => {
+                    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (p.rank ?? i + 1);
+                    const medalColor = i === 0 ? '#FACC15' : i === 1 ? '#e2e8f0' : i === 2 ? '#cd7c2f' : 'var(--color-text-muted)';
+                    const flag = flagEmoji(p.country);
+                    const goPlayer = () => { if (p.tag) navigate('/leaderboards?player=' + encodeURIComponent(p.tag)); };
+                    return (
+                      <tr key={p.tag || i}>
+                        <td>
+                          <span style={{ fontWeight:700, color: medalColor, fontSize: i < 3 ? '1.1em' : '1em' }}>
+                            {medal}
+                          </span>
+                        </td>
+                        <td>
+                          <PlayerAvatar player={p} medalColor={medalColor} />
+                        </td>
+                        <td>
+                          <span
+                            onClick={goPlayer}
+                            style={{ fontWeight: i < 3 ? 600 : 400, color:'var(--color-text)', cursor: p.tag ? 'pointer' : 'default' }}
+                            title={p.tag ? 'Ver en leaderboards' : ''}
+                          >
+                            {p.name}
+                          </span>
+                        </td>
+                        <td style={{ color:'var(--color-text-muted)', fontFamily:'monospace', fontSize:'0.85em' }}>{p.tag}</td>
+                        <td style={{ color:'var(--color-gold)', fontWeight:600 }}>{p.trophies != null ? p.trophies.toLocaleString() : '-'}</td>
+                        <td style={{ color:'var(--color-text-muted)', fontSize:'0.9em' }}>{p.club || '—'}</td>
+                        <td style={{ color:'var(--color-text-muted)', fontSize:'0.9em' }}>
+                          {flag ? <span>{flag} {p.country.toUpperCase()}</span> : '—'}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+              <div style={{ textAlign:'right', marginTop:'1rem' }}>
+                <button
+                  type="button"
+                  className="btn btn-sm"
+                  style={{ background:'transparent', border:'1px solid rgba(255,255,255,0.1)', color:'var(--color-text-muted)' }}
+                  onClick={() => navigate('/leaderboards')}
+                >
+                  Ver ranking completo →
+                </button>
+              </div>
+            </>
           )}
         </div>
 
@@ -350,6 +429,43 @@ function AbilityImg({ src, color, fallback, size = 44 }) {
   );
 }
 
+// Avatar del jugador. Usa el icon.id que devuelve la API de Supercell (lo
+// servimos vía CDN público de Brawlify, que es el host estándar para
+// `profile-icons/regular/{id}.png` — los IDs vienen 1:1 de Supercell).
+// Si la imagen falla cae a la inicial del nombre dentro del color de medalla.
+function PlayerAvatar({ player, medalColor }) {
+  const [failed, setFailed] = useState(false);
+  const iconId = player?.icon?.id;
+  const src = iconId ? `https://cdn.brawlify.com/profile-icons/regular/${iconId}.png` : null;
+  const initial = (player?.name || '?')[0].toUpperCase();
+  const wrap = {
+    width: 32, height: 32, borderRadius: '50%', flexShrink: 0, overflow: 'hidden',
+    background: medalColor === 'var(--color-text-muted)' ? 'rgba(255,255,255,0.08)' : medalColor + '22',
+    border: '1px solid ' + (medalColor === 'var(--color-text-muted)' ? 'rgba(255,255,255,0.15)' : medalColor + '55'),
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+  };
+  if (!src || failed) {
+    return (
+      <div style={wrap}>
+        <span style={{ fontSize: '0.78em', fontWeight: 800, color: medalColor }}>{initial}</span>
+      </div>
+    );
+  }
+  return (
+    <div style={wrap}>
+      <img
+        src={src}
+        alt={player.name || ''}
+        width={32}
+        height={32}
+        loading="lazy"
+        onError={() => setFailed(true)}
+        style={{ width: 32, height: 32, objectFit: 'cover' }}
+      />
+    </div>
+  );
+}
+
 function AbilityCard({ type, name, color, imageUrl }) {
   return (
     <div style={{
@@ -366,49 +482,3 @@ function AbilityCard({ type, name, color, imageUrl }) {
   );
 }
 
-function TrophyChart({ data }) {
-  const W = 800, H = 180, P = { l: 50, r: 12, t: 12, b: 28 };
-  const xs = data.map(d => new Date(d.t).getTime());
-  const ys = data.map(d => d.v);
-  const xMin = Math.min(...xs), xMax = Math.max(...xs);
-  const yMin = Math.min(...ys), yMax = Math.max(...ys);
-  const xRange = Math.max(1, xMax - xMin);
-  const yRange = Math.max(1, yMax - yMin);
-  const px = x => P.l + ((x - xMin) / xRange) * (W - P.l - P.r);
-  const py = y => P.t + (1 - (y - yMin) / yRange) * (H - P.t - P.b);
-  const pts = data.map(d => [px(new Date(d.t).getTime()), py(d.v)]);
-  const path = pts.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(' ');
-  const area = path + ` L ${pts[pts.length-1][0].toFixed(1)} ${H - P.b} L ${pts[0][0].toFixed(1)} ${H - P.b} Z`;
-  const yTicks = Array.from({ length: 5 }, (_, i) => yMin + (yRange * i) / 4);
-  const delta = ys[ys.length - 1] - ys[0];
-
-  return (
-    <div>
-      <div style={{ display:'flex', justifyContent:'space-between', marginBottom:'0.5rem', fontSize:'0.85em' }}>
-        <span style={{ color:'var(--color-text-muted)' }}>{data.length} snapshots</span>
-        <span style={{ color: delta >= 0 ? '#22c55e' : '#ef4444', fontWeight:600 }}>
-          {delta >= 0 ? '+' : ''}{delta.toLocaleString('es-ES')} trofeos
-        </span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} style={{ width:'100%', height:'auto', overflow:'visible' }}>
-        <defs>
-          <linearGradient id="bdTrGrad" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#3b82f6" stopOpacity="0.35"/>
-            <stop offset="100%" stopColor="#3b82f6" stopOpacity="0"/>
-          </linearGradient>
-        </defs>
-        {yTicks.map((v, i) => (
-          <g key={i}>
-            <line x1={P.l} x2={W - P.r} y1={py(v)} y2={py(v)} stroke="rgba(255,255,255,0.06)" strokeWidth="1"/>
-            <text x={P.l - 6} y={py(v) + 3} textAnchor="end" fontSize="10" fill="#6b7280" fontFamily="monospace">
-              {Math.round(v).toLocaleString('es-ES')}
-            </text>
-          </g>
-        ))}
-        <path d={area} fill="url(#bdTrGrad)"/>
-        <path d={path} fill="none" stroke="#3b82f6" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
-        {pts.map((p, i) => <circle key={i} cx={p[0]} cy={p[1]} r="2.5" fill="#3b82f6"/>)}
-      </svg>
-    </div>
-  );
-}
