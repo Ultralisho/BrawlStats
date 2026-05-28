@@ -1,5 +1,6 @@
 const { Op } = require('sequelize');
-const { Stat, Player, Brawler, Battle, PlayerSnapshot } = require('../models');
+const sequelize = require('../config/database');
+const { Stat, Player, Brawler, Battle, PlayerSnapshot, DatasetBattle } = require('../models');
 const supercell = require('../services/supercell.service');
 const { ok, notFound } = require('../utils/apiResponse');
 
@@ -289,6 +290,109 @@ async function getFavoriteBrawler(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// Mapa label visible → key interna que usan los modelos Battle / Stat.gameMode
+const TIERLIST_MODE_KEYS = {
+  'Gem Grab':   'gemGrab',
+  'Brawl Ball': 'brawlBall',
+  'Hot Zone':   'hotZone',
+  'Knockout':   'knockout',
+  'Heist':      'heist',
+  'Bounty':     'bounty',
+};
+
+// Tier list global: agrega wins/losses por brawler.
+// Fuente preferida: tabla `stats` con JOIN a `brawlers`. Si esa tabla aún no
+// tiene wins/losses agregados (el snapshot inicial solo guarda trofeos),
+// caemos a `dataset_battles`, que es donde están las partidas reales del TFG.
+async function getTierlist(req, res, next) {
+  try {
+    const modeLabel = req.query.mode;
+    const modeKey   = modeLabel ? (TIERLIST_MODE_KEYS[modeLabel] || modeLabel) : null;
+
+    // 1) Intento sobre la tabla `stats` agrupando por brawlerId.
+    const statsWhere = {};
+    if (modeKey) statsWhere.gameMode = modeKey;
+
+    const fromStats = await Stat.findAll({
+      attributes: [
+        'brawlerId',
+        [sequelize.fn('SUM', sequelize.col('wins')),   'wins'],
+        [sequelize.fn('SUM', sequelize.col('losses')), 'losses'],
+      ],
+      include: [{ model: Brawler, as: 'brawler', attributes: ['id', 'name'] }],
+      where: statsWhere,
+      group: ['Stat.brawlerId', 'brawler.id'],
+      raw: true,
+      nest: true,
+    });
+
+    let out = fromStats.map(r => {
+      const wins   = Number(r.wins)   || 0;
+      const losses = Number(r.losses) || 0;
+      const totalGames = wins + losses;
+      return {
+        brawlerId: Number(r.brawlerId),
+        name:      r.brawler?.name || ('#' + r.brawlerId),
+        totalGames,
+        wins,
+        losses,
+        winRate:   totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0,
+      };
+    });
+
+    // 2) Fallback: si la tabla stats no aporta datos reales (todo wins=losses=0),
+    //    usamos dataset_battles, que es la fuente con cobertura del proyecto.
+    if (out.every(b => b.totalGames === 0)) {
+      const dbWhere = {
+        result:  { [Op.in]: ['Win', 'Loss'] },
+        brawler: { [Op.ne]: null },
+      };
+      if (modeKey) dbWhere.mode = modeKey;
+
+      const rows = await DatasetBattle.findAll({
+        attributes: [
+          'brawler',
+          [sequelize.literal("SUM(CASE WHEN result = 'Win'  THEN 1 ELSE 0 END)"), 'wins'],
+          [sequelize.literal("SUM(CASE WHEN result = 'Loss' THEN 1 ELSE 0 END)"), 'losses'],
+        ],
+        where: dbWhere,
+        group: ['brawler'],
+        raw: true,
+      });
+
+      // dataset_battles guarda brawler por nombre (mayúsculas). Resolvemos id
+      // mirando la tabla brawlers.
+      const brawlerRows = await Brawler.findAll({ attributes: ['id', 'name'] });
+      const nameUpperToBrawler = Object.fromEntries(
+        brawlerRows.map(b => [(b.name || '').toUpperCase(), b])
+      );
+
+      out = rows.map(r => {
+        const brawler = nameUpperToBrawler[(r.brawler || '').toUpperCase()];
+        if (!brawler) return null;
+        const wins   = Number(r.wins)   || 0;
+        const losses = Number(r.losses) || 0;
+        const totalGames = wins + losses;
+        return {
+          brawlerId: brawler.id,
+          name:      brawler.name,
+          totalGames,
+          wins,
+          losses,
+          winRate:   totalGames > 0 ? Math.round((wins / totalGames) * 100) : 0,
+        };
+      }).filter(Boolean);
+    }
+
+    // 3) Mínimo 5 partidas + orden por winRate DESC.
+    out = out
+      .filter(b => b.totalGames >= 5)
+      .sort((a, b) => b.winRate - a.winRate);
+
+    return ok(res, out);
+  } catch (err) { next(err); }
+}
+
 module.exports = {
   getMyStats,
   saveSnapshot,
@@ -298,4 +402,5 @@ module.exports = {
   getStreak,
   getModeDistribution,
   getFavoriteBrawler,
+  getTierlist,
 };

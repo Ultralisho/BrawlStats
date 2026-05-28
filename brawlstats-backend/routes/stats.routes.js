@@ -9,6 +9,7 @@ router.get ('/trophy-history',     protect, ctrl.getTrophyHistory);
 router.get ('/streak',             protect, ctrl.getStreak);
 router.get ('/mode-distribution',  protect, ctrl.getModeDistribution);
 router.get ('/favorite-brawler',   protect, ctrl.getFavoriteBrawler);
+router.get ('/tierlist',                    ctrl.getTierlist);
 router.post('/snapshot',           protect, ctrl.saveSnapshot);
 
 module.exports = router;
