@@ -5,7 +5,8 @@ import Topbar from '../components/Topbar';
 import KpiCard from '../components/KpiCard';
 import { useAuth } from '../App';
 
-const TABS = ['Usuarios', 'Reportes', 'Jugadores', 'Brawlers', 'Sistema'];
+const TABS = ['Usuarios', 'Reportes', 'Jugadores', 'Brawlers', 'Tutoriales', 'Sistema'];
+const CAT_OPTIONS = ['Básico', 'Intermedio', 'Avanzado', 'Modos de juego'];
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL || '';
 
 export default function Admin() {
@@ -19,6 +20,10 @@ export default function Admin() {
   const [error,    setError]    = useState(null);
   const [syncMsg,  setSyncMsg]  = useState(null);
   const [syncing,  setSyncing]  = useState(false);
+  const [tutorials,    setTutorials]    = useState([]);
+  const [tutForm,      setTutForm]      = useState({ title:'', description:'', category:'Básico', brawler:'', youtubeQuery:'', level:'Básico' });
+  const [editingTut,   setEditingTut]   = useState(null);
+  const [showTutForm,  setShowTutForm]  = useState(false);
 
   const [search,   setSearch]   = useState('');
   const [roleF,    setRoleF]    = useState('all');
@@ -56,13 +61,43 @@ export default function Admin() {
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
   };
+  const loadTutorials = async () => {
+    setLoading(true); setError(null);
+    try {
+      const data = await fetchApi('/tutorials/admin');
+      setTutorials(Array.isArray(data) ? data : []);
+    } catch (err) { setError(err.message); }
+    finally { setLoading(false); }
+  };
+  const saveTutorial = async (e) => {
+    e.preventDefault();
+    try {
+      if (editingTut) {
+        await fetchApi('/tutorials/admin/' + editingTut.id, { method:'PUT', body: tutForm });
+      } else {
+        await fetchApi('/tutorials/admin', { method:'POST', body: tutForm });
+      }
+      setShowTutForm(false); setEditingTut(null);
+      setTutForm({ title:'', description:'', category:'Básico', brawler:'', youtubeQuery:'', level:'Básico' });
+      loadTutorials();
+    } catch (err) { setError(err.message); }
+  };
+  const deleteTutorial = async (id) => {
+    if (!window.confirm('¿Eliminar este tutorial?')) return;
+    try {
+      await fetchApi('/tutorials/admin/' + id, { method:'DELETE' });
+      setTutorials(prev => prev.filter(t => t.id !== id));
+    } catch (err) { setError(err.message); }
+  };
 
   useEffect(() => {
     setSearch(''); setRoleF('all'); setStatusF('all'); setSyncMsg(null); setError(null);
+    setShowTutForm(false); setEditingTut(null);
     if (tab === 'Usuarios')        loadUsers();
     else if (tab === 'Reportes')   loadReports();
     else if (tab === 'Jugadores')  loadPlayers();
     else if (tab === 'Brawlers')   loadBrawlers();
+    else if (tab === 'Tutoriales') loadTutorials();
     else if (tab === 'Sistema')    { loadUsers(); loadBrawlers(); }
   }, [tab]);
 
@@ -387,6 +422,88 @@ export default function Admin() {
                   ))}
                 </div>
               )}
+            </div>
+          )}
+
+          {/* ── TUTORIALES ───────────────────────────────────────────── */}
+          {tab === 'Tutoriales' && !loading && (
+            <div>
+              <div style={{ display:'flex', justifyContent:'flex-end', marginBottom:'1rem' }}>
+                <button className="btn btn-primary" onClick={() => { setEditingTut(null); setTutForm({ title:'', description:'', category:'Básico', brawler:'', youtubeQuery:'', level:'Básico' }); setShowTutForm(v => !v); }}>
+                  + Nuevo tutorial
+                </button>
+              </div>
+              {showTutForm && (
+                <form onSubmit={saveTutorial} style={{ background:'rgba(255,255,255,0.03)', border:'1px solid rgba(255,255,255,0.1)', borderRadius:8, padding:'1rem', marginBottom:'1rem' }}>
+                  <h4 style={{ color:'var(--color-text)', marginBottom:'0.75rem' }}>{editingTut ? 'Editar tutorial' : 'Nuevo tutorial'}</h4>
+                  <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr', gap:'0.75rem', marginBottom:'0.75rem' }}>
+                    <div className="form-group" style={{ margin:0 }}>
+                      <label className="form-label">Título *</label>
+                      <input className="form-input" required value={tutForm.title} onChange={e => setTutForm(f => ({ ...f, title: e.target.value }))} />
+                    </div>
+                    <div className="form-group" style={{ margin:0 }}>
+                      <label className="form-label">Categoría</label>
+                      <select className="form-input" value={tutForm.category} onChange={e => setTutForm(f => ({ ...f, category: e.target.value }))}>
+                        {CAT_OPTIONS.map(c => <option key={c}>{c}</option>)}
+                      </select>
+                    </div>
+                    <div className="form-group" style={{ margin:0 }}>
+                      <label className="form-label">Brawler (opcional)</label>
+                      <input className="form-input" value={tutForm.brawler} onChange={e => setTutForm(f => ({ ...f, brawler: e.target.value }))} placeholder="ej: Leon" />
+                    </div>
+                    <div className="form-group" style={{ margin:0 }}>
+                      <label className="form-label">Nivel</label>
+                      <select className="form-input" value={tutForm.level} onChange={e => setTutForm(f => ({ ...f, level: e.target.value }))}>
+                        <option>Básico</option>
+                        <option>Intermedio</option>
+                        <option>Avanzado</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="form-group" style={{ margin:'0 0 0.75rem' }}>
+                    <label className="form-label">Descripción</label>
+                    <textarea className="form-input" rows={2} value={tutForm.description} onChange={e => setTutForm(f => ({ ...f, description: e.target.value }))} />
+                  </div>
+                  <div className="form-group" style={{ margin:'0 0 0.75rem' }}>
+                    <label className="form-label">Búsqueda en YouTube</label>
+                    <input className="form-input" value={tutForm.youtubeQuery} onChange={e => setTutForm(f => ({ ...f, youtubeQuery: e.target.value }))} placeholder="ej: Leon Brawl Stars guide 2025" />
+                  </div>
+                  <div style={{ display:'flex', gap:'0.5rem' }}>
+                    <button type="submit" className="btn btn-primary">{editingTut ? 'Guardar cambios' : 'Crear tutorial'}</button>
+                    <button type="button" className="btn" style={{ background:'transparent', border:'1px solid rgba(255,255,255,0.1)', color:'var(--color-text-muted)' }} onClick={() => setShowTutForm(false)}>Cancelar</button>
+                  </div>
+                </form>
+              )}
+              <div style={{ overflowX:'auto' }}>
+                <table className="table">
+                  <thead><tr><th>Título</th><th>Categoría</th><th>Brawler</th><th>Nivel</th><th>Acciones</th></tr></thead>
+                  <tbody>
+                    {tutorials.map(t => (
+                      <tr key={t.id}>
+                        <td style={{ fontWeight:500 }}>{t.title}</td>
+                        <td style={{ color:'var(--color-text-muted)' }}>{t.category}</td>
+                        <td style={{ color:'var(--color-text-muted)' }}>{t.brawler || '—'}</td>
+                        <td style={{ color:'var(--color-text-muted)', fontFamily:'monospace' }}>{t.level}</td>
+                        <td>
+                          <div style={{ display:'flex', gap:'0.4rem' }}>
+                            <button className="btn" style={{ fontSize:'0.78em', padding:'4px 8px', background:'rgba(59,130,246,0.15)', color:'#3b82f6', border:'1px solid rgba(59,130,246,0.4)' }}
+                              onClick={() => { setEditingTut(t); setTutForm({ title:t.title, description:t.description||'', category:t.category, brawler:t.brawler||'', youtubeQuery:t.youtubeQuery||'', level:t.level||'Básico' }); setShowTutForm(true); }}>
+                              Editar
+                            </button>
+                            <button className="btn" style={{ fontSize:'0.78em', padding:'4px 8px', background:'rgba(239,68,68,0.10)', color:'#ef4444', border:'1px solid rgba(239,68,68,0.4)' }}
+                              onClick={() => deleteTutorial(t.id)}>
+                              Eliminar
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))}
+                    {tutorials.length === 0 && (
+                      <tr><td colSpan={5} style={{ color:'var(--color-text-muted)', textAlign:'center', padding:'1.5rem' }}>No hay tutoriales todavía.</td></tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
           )}
 
