@@ -730,7 +730,7 @@ export default function Builds() {
     let alive = true;
     setLoading(true); setError(null);
 
-    fetch('/api/brawlapi/brawlers')
+    fetch(`${process.env.REACT_APP_API_URL}/brawlapi/brawlers`)
       .then(async r => {
         if (!r.ok) throw new Error('HTTP ' + r.status);
         return r.json();
