@@ -36,7 +36,7 @@ app.use('/api/v1/stats',       statsRoutes);
 app.use('/api/v1/reports',     reportRoutes);
 app.use('/api/v1/leaderboard', leaderboardRoutes);
 app.use('/api/v1/events',      eventsRoutes);
-app.use('/api/brawlapi',       brawlapiRoutes);
+app.use('/api/v1/brawlapi',      brawlapiRoutes);
 app.use('/api/v1/tutorials',   tutorialRoutes);
 
 // ── 404 ─────────────────────────────────────────────────────────────────────
