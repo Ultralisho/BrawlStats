@@ -1,5 +1,7 @@
 const { Sequelize } = require('sequelize');
 
+const isProduction = process.env.NODE_ENV === 'production';
+
 const sequelize = new Sequelize(
   process.env.DB_NAME || 'brawlstats',
   process.env.DB_USER || 'root',
@@ -9,7 +11,11 @@ const sequelize = new Sequelize(
     port:    parseInt(process.env.DB_PORT) || 3306,
     dialect: 'mysql',
     logging: false,
-    dialectOptions: {},
+    dialectOptions: isProduction ? {
+      ssl: {
+        rejectUnauthorized: true
+      }
+    } : {},
     pool: { max: 5, min: 0, acquire: 30000, idle: 10000 },
   }
 );
